@@ -364,6 +364,8 @@ class COLREGS_Evaluator:
         ownship_chi: float,
         ownship_U: float,
         obstacle: ObstacleData,
+        ownship_x: float = 0.0,
+        ownship_y: float = 0.0,
     ) -> str:
         """Detect COLREGs situation between ownship and obstacle.
 
@@ -371,6 +373,8 @@ class COLREGS_Evaluator:
             ownship_chi: ownship heading (radians)
             ownship_U: ownship speed
             obstacle: obstacle ship data
+            ownship_x: ownship x position (default 0.0 for backward compatibility)
+            ownship_y: ownship y position (default 0.0 for backward compatibility)
 
         Returns:
             Situation type: "head-on", "crossing_port", "crossing_stb",
@@ -380,10 +384,10 @@ class COLREGS_Evaluator:
         if obstacle is None:
             return "none"
 
-        # Relative bearing
+        # Relative bearing from ownship to obstacle
         bearing = math.atan2(
-            obstacle.y - 0,  # Simplified: relative to origin
-            obstacle.x - 0,
+            obstacle.y - ownship_y,
+            obstacle.x - ownship_x,
         )
         rel_bearing = normalize_angle(bearing - ownship_chi)
 

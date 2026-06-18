@@ -102,7 +102,8 @@ class TestGeometry:
         """Test ship polygon generation."""
         polygon = p.ship_polygon(x=0.0, y=0.0, chi=0.0, length=100.0, beam=20.0)
 
-        assert len(polygon) == 4
+        # 4 corners + closing point = 5
+        assert len(polygon) == 5
         # Ship should be symmetric about x-axis at chi=0
         # Points should be at corners of bounding box
         x_coords = [p[0] for p in polygon]

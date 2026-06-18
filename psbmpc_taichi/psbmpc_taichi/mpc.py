@@ -280,8 +280,15 @@ class PSBMPC_Solver:
         best_idx = int(np.argmin(costs))
         best_cost = costs[best_idx]
 
+        # Re-evaluate to get the cost breakdown for the best candidate
         best_traj_x, best_traj_y, best_traj_chi, best_traj_U = all_trajs[best_idx]
-        best_cost_breakdown = costs[best_idx]
+        best_cost_breakdown = self.cost_evaluator.calculate_total_cost(
+            best_traj_x, best_traj_y, best_traj_chi, best_traj_U,
+            obstacles, waypoints,
+            self.ownship_length, self.ownship_beam,
+            self.last_optimal_offsets_chi,
+            self.last_optimal_offsets_U,
+        )
 
         # Update last optimal offsets
         self.last_optimal_offsets_chi = [candidate_offsets[best_idx]] * self.params.n_M

@@ -153,10 +153,12 @@ def ship_polygon(
     half_b = beam / 2.0
 
     # Local corners (bow is at +x in local frame)
+    # 4 corners of rectangular ship: bow-starboard, bow-port, stern-port, stern-starboard
     corners_local = [
-        (half_l, 0.0),   # bow
-        (-half_l, half_b),  # starboard stern
-        (-half_l, -half_b),  # port stern
+        (half_l, -half_b),  # bow starboard
+        (half_l, half_b),   # bow port
+        (-half_l, half_b),  # stern port
+        (-half_l, -half_b), # stern starboard
     ]
 
     # Rotate and translate
