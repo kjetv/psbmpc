@@ -2,15 +2,15 @@
 
 Implements kinematic and kinetic ship models for trajectory prediction
 in the MPC framework. Ported from the C++/CUDA implementations.
-"""
-from __future__ import annotations
 
+Supports both CPU (pure Python) and GPU (Taichi) execution modes.
+"""
 import math
 from typing import List, Optional, Tuple
 
 import numpy as np
 
-from .types import ShipState4, ShipState6, Waypoint
+from .types import ShipState4, ShipState6, Waypoint, TI_AVAILABLE, ti
 from .utils import (
     Xoshiro256pp,
     angle_diff,
@@ -19,6 +19,199 @@ from .utils import (
     normalize_angle,
     ship_polygon,
 )
+
+
+# ============================================================================
+# GPU Kernels (Taichi)
+# ============================================================================
+
+if TI_AVAILABLE and ti is not None:
+    # ========================================================================
+    # Euler integration step (kernel)
+    # ========================================================================
+    @ti.func
+    def _euler_step_taichi(x: ti.f32, y: ti.f32, chi: ti.f32, U: ti.f32,
+                           chi_d: ti.f32, U_d: ti.f32, dt: ti.f32,
+                           time_constant: ti.f32) -> Tuple[ti.f32, ti.f32, ti.f32, ti.f32]:
+        """Single Euler integration step (Taichi func)."""
+        # Heading dynamics (first-order response)
+        chi_dot = (chi_d - chi) / time_constant
+        # Surge dynamics (first-order response)
+        U_dot = (U_d - U) / time_constant
+        # Position dynamics
+        x_new = x + U * ti.cos(chi) * dt
+        y_new = y + U * ti.sin(chi) * dt
+        # Normalize heading
+        chi_new = chi + chi_dot * dt
+        # Simple heading normalization (inline)
+        while chi_new > 3.141592653589793:
+            chi_new -= 6.283185307179586
+        while chi_new < -3.141592653589793:
+            chi_new += 6.283185307179586
+        U_new = U + U_dot * dt
+        return x_new, y_new, chi_new, U_new
+
+    # ========================================================================
+    # RK1 (Heun) integration step (kernel)
+    # ========================================================================
+    @ti.func
+    def _rk1_step_taichi(x: ti.f32, y: ti.f32, chi: ti.f32, U: ti.f32,
+                         chi_d: ti.f32, U_d: ti.f32, dt: ti.f32,
+                         time_constant: ti.f32) -> Tuple[ti.f32, ti.f32, ti.f32, ti.f32]:
+        """Single RK1 (Heun) integration step (Taichi func)."""
+        # Helper: compute derivatives
+        def derivs(st_x, st_y, st_chi, st_U):
+            chi_dot = (chi_d - st_chi) / time_constant
+            U_dot = (U_d - st_U) / time_constant
+            return (
+                st_U * ti.cos(st_chi),
+                st_U * ti.sin(st_chi),
+                chi_dot,
+                U_dot,
+            )
+
+        # Euler step (predictor)
+        k1_x, k1_y, k1_chi, k1_U = derivs(x, y, chi, U)
+        pred_x = x + k1_x * dt
+        pred_y = y + k1_y * dt
+        pred_chi = chi + k1_chi * dt
+        pred_U = U + k1_U * dt
+
+        # RK1 correction
+        k2_x, k2_y, k2_chi, k2_U = derivs(pred_x, pred_y, pred_chi, pred_U)
+
+        # Average
+        x_new = x + 0.5 * (k1_x + k2_x) * dt
+        y_new = y + 0.5 * (k1_y + k2_y) * dt
+        chi_new = chi + 0.5 * (k1_chi + k2_chi) * dt
+        U_new = U + 0.5 * (k1_U + k2_U) * dt
+
+        # Normalize heading
+        while chi_new > 3.141592653589793:
+            chi_new -= 6.283185307179586
+        while chi_new < -3.141592653589793:
+            chi_new += 6.283185307179586
+
+        return x_new, y_new, chi_new, U_new
+
+    # ========================================================================
+    # Batched trajectory prediction kernel (all candidates in one launch)
+    # ========================================================================
+    @ti.kernel
+    def predict_trajectory_batch_taichi(
+        xs_x: ti.f32, xs_y: ti.f32, xs_chi: ti.f32, xs_U: ti.f32,
+        offsets: ti.types.ndarray(),
+        n_candidates: ti.i32,
+        n_steps: ti.i32,
+        dt: ti.f32,
+        time_constant: ti.f32,
+        use_rk1: ti.i32,
+        traj_x: ti.types.ndarray(),
+        traj_y: ti.types.ndarray(),
+        traj_chi: ti.types.ndarray(),
+        traj_U: ti.types.ndarray(),
+    ):
+        """Batch trajectory prediction for all candidate bearings.
+
+        Args:
+            xs_x, xs_y, xs_chi, xs_U: initial ship state
+            offsets: [n_candidates] heading offsets
+            n_candidates: number of candidate bearings
+            n_steps: number of integration steps
+            dt: time step
+            time_constant: ship response time constant
+            use_rk1: 0=Euler, 1=RK1
+            traj_x, traj_y, traj_chi, traj_U: [n_candidates x (n_steps+1)] output arrays
+        """
+        for c in range(n_candidates):
+            offset_chi = offsets[c]
+            chi_d = xs_chi + offset_chi
+            # Simple normalization
+            while chi_d > 3.141592653589793:
+                chi_d -= 6.283185307179586
+            while chi_d < -3.141592653589793:
+                chi_d += 6.283185307179586
+
+            # Store initial state
+            base = c * (n_steps + 1)
+            traj_x[base] = xs_x
+            traj_y[base] = xs_y
+            traj_chi[base] = xs_chi
+            traj_U[base] = xs_U
+
+            # Integrate
+            cx, cy, cchi, cU = xs_x, xs_y, xs_chi, xs_U
+            for s in range(n_steps):
+                if use_rk1 != 0:
+                    cx, cy, cchi, cU = _rk1_step_taichi(cx, cy, cchi, cU,
+                                                         chi_d, xs_U, dt, time_constant)
+                else:
+                    cx, cy, cchi, cU = _euler_step_taichi(cx, cy, cchi, cU,
+                                                           chi_d, xs_U, dt, time_constant)
+                traj_x[base + s + 1] = cx
+                traj_y[base + s + 1] = cy
+                traj_chi[base + s + 1] = cchi
+                traj_U[base + s + 1] = cU
+
+    # ========================================================================
+    # Batched trajectory prediction with per-step offsets
+    # ========================================================================
+    @ti.kernel
+    def predict_trajectory_step_offsets_taichi(
+        xs_x: ti.f32, xs_y: ti.f32, xs_chi: ti.f32, xs_U: ti.f32,
+        offsets: ti.types.ndarray(),
+        n_candidates: ti.i32,
+        n_steps: ti.i32,
+        dt: ti.f32,
+        time_constant: ti.f32,
+        use_rk1: ti.i32,
+        traj_x: ti.types.ndarray(),
+        traj_y: ti.types.ndarray(),
+        traj_chi: ti.types.ndarray(),
+        traj_U: ti.types.ndarray(),
+    ):
+        """Batch trajectory prediction with per-step heading offsets.
+
+        Args:
+            xs_x, xs_y, xs_chi, xs_U: initial ship state
+            offsets: [n_candidates x n_steps] per-step heading offsets
+            n_candidates: number of candidate bearings
+            n_steps: number of integration steps
+            dt: time step
+            time_constant: ship response time constant
+            use_rk1: 0=Euler, 1=RK1
+            traj_x, traj_y, traj_chi, traj_U: [n_candidates x (n_steps+1)] output arrays
+        """
+        for c in range(n_candidates):
+            # Store initial state
+            base = c * (n_steps + 1)
+            traj_x[base] = xs_x
+            traj_y[base] = xs_y
+            traj_chi[base] = xs_chi
+            traj_U[base] = xs_U
+
+            # Integrate with per-step offsets
+            cx, cy, cchi, cU = xs_x, xs_y, xs_chi, xs_U
+            for s in range(n_steps):
+                offset_idx = c * n_steps + s
+                offset_chi = offsets[offset_idx]
+                chi_d = cchi + offset_chi
+                # Simple normalization
+                while chi_d > 3.141592653589793:
+                    chi_d -= 6.283185307179586
+                while chi_d < -3.141592653589793:
+                    chi_d += 6.283185307179586
+
+                if use_rk1 != 0:
+                    cx, cy, cchi, cU = _rk1_step_taichi(cx, cy, cchi, cU,
+                                                         chi_d, cU, dt, time_constant)
+                else:
+                    cx, cy, cchi, cU = _euler_step_taichi(cx, cy, cchi, cU,
+                                                           chi_d, cU, dt, time_constant)
+                traj_x[base + s + 1] = cx
+                traj_y[base + s + 1] = cy
+                traj_chi[base + s + 1] = cchi
+                traj_U[base + s + 1] = cU
 
 
 # ============================================================================
@@ -290,6 +483,106 @@ class Kinematic_Ship:
 
         return traj_x, traj_y, traj_chi, traj_U
 
+    def predict_trajectory_gpu(
+        self,
+        xs: ShipState4,
+        offsets: List[List[float]],
+        T: float = 300.0,
+        dt: float = 1.0,
+        method: str = "linear",
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """GPU-accelerated batch trajectory prediction.
+
+        Predicts trajectories for all candidate bearings in parallel.
+
+        Args:
+            xs: initial ship state
+            offsets: list of candidate heading offsets (list of lists,
+                     each inner list has n_steps elements)
+            T: prediction horizon (seconds)
+            dt: time step (seconds)
+            method: integration method ("linear" or "erk1")
+
+        Returns:
+            (traj_x, traj_y, traj_chi, traj_U): trajectory arrays
+                each of shape (n_candidates, n_steps+1)
+        """
+        n_candidates = len(offsets)
+        n_steps = int(T / dt)
+        use_rk1 = 1 if method == "erk1" else 0
+
+        # Allocate output arrays on CPU
+        traj_x = np.zeros((n_candidates, n_steps + 1), dtype=np.float32)
+        traj_y = np.zeros((n_candidates, n_steps + 1), dtype=np.float32)
+        traj_chi = np.zeros((n_candidates, n_steps + 1), dtype=np.float32)
+        traj_U = np.zeros((n_candidates, n_steps + 1), dtype=np.float32)
+
+        # Flatten offsets for GPU
+        offsets_flat = np.zeros(n_candidates * n_steps, dtype=np.float32)
+        for c in range(n_candidates):
+            for s in range(n_steps):
+                offsets_flat[c * n_steps + s] = offsets[c][s] if s < len(offsets[c]) else 0.0
+
+        # Launch GPU kernel
+        predict_trajectory_step_offsets_taichi(
+            float(xs.x), float(xs.y), float(xs.chi), float(xs.U),
+            offsets_flat,
+            n_candidates, n_steps,
+            float(dt), float(self.time_constant),
+            use_rk1,
+            traj_x, traj_y, traj_chi, traj_U,
+        )
+
+        return traj_x, traj_y, traj_chi, traj_U
+
+    def predict_trajectory_batch_gpu(
+        self,
+        xs: ShipState4,
+        offsets: List[float],
+        T: float = 300.0,
+        dt: float = 1.0,
+        method: str = "linear",
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """GPU-accelerated batch trajectory prediction with constant offsets.
+
+        Each candidate uses a constant heading offset throughout the trajectory.
+
+        Args:
+            xs: initial ship state
+            offsets: list of candidate heading offsets (one per candidate)
+            T: prediction horizon (seconds)
+            dt: time step (seconds)
+            method: integration method ("linear" or "erk1")
+
+        Returns:
+            (traj_x, traj_y, traj_chi, traj_U): trajectory arrays
+                each of shape (n_candidates, n_steps+1)
+        """
+        n_candidates = len(offsets)
+        n_steps = int(T / dt)
+        use_rk1 = 1 if method == "erk1" else 0
+
+        # Allocate output arrays on CPU
+        traj_x = np.zeros((n_candidates, n_steps + 1), dtype=np.float32)
+        traj_y = np.zeros((n_candidates, n_steps + 1), dtype=np.float32)
+        traj_chi = np.zeros((n_candidates, n_steps + 1), dtype=np.float32)
+        traj_U = np.zeros((n_candidates, n_steps + 1), dtype=np.float32)
+
+        # Prepare offsets array
+        offsets_arr = np.array(offsets, dtype=np.float32)
+
+        # Launch GPU kernel
+        predict_trajectory_batch_taichi(
+            float(xs.x), float(xs.y), float(xs.chi), float(xs.U),
+            offsets_arr,
+            n_candidates, n_steps,
+            float(dt), float(self.time_constant),
+            use_rk1,
+            traj_x, traj_y, traj_chi, traj_U,
+        )
+
+        return traj_x, traj_y, traj_chi, traj_U
+
 
 # ============================================================================
 # Kinetic Ship Model (3DOF)
@@ -505,155 +798,227 @@ class Kinetic_Ship:
             u=self.u, v=self.v, r=self.r,
         )
 
-    def predict_trajectory(
-        self,
-        T: float = 300.0,
-        dt: float = 1.0,
-        delta: float = 0.0,
-        T_prop: float = 0.0,
-    ) -> Tuple[List[float], List[float], List[float], List[float], List[float], List[float]]:
-        """Predict full trajectory over the MPC horizon.
-
-        Args:
-            T: prediction horizon (seconds)
-            dt: time step
-            delta: constant rudder angle
-            T_prop: constant propeller thrust
-
-        Returns:
-            (x, y, psi, u, v, r) trajectory arrays
-        """
-        n_steps = int(T / dt)
-        traj_x, traj_y, traj_psi = [self.x], [self.y], [self.psi]
-        traj_u, traj_v, traj_r = [self.u], [self.v], [self.r]
-
-        for _ in range(n_steps):
-            self.integrate(dt=dt, delta=delta, T_prop=T_prop)
-            traj_x.append(self.x)
-            traj_y.append(self.y)
-            traj_psi.append(self.psi)
-            traj_u.append(self.u)
-            traj_v.append(self.v)
-            traj_r.append(self.r)
-
-        return traj_x, traj_y, traj_psi, traj_u, traj_v, traj_r
-
 
 # ============================================================================
 # Obstacle Ship Model
 # ============================================================================
 
 
-class Obstacle_Ship:
-    """Simple LOS follower for obstacle ship prediction.
+class Obstacle_Ship(Kinematic_Ship):
+    """Obstacle ship model for collision avoidance simulations.
 
-    Used for predicting obstacle trajectories in collision avoidance.
+    Extends Kinematic_Ship with obstacle-specific maneuvering behavior,
+    including heading offset maneuvers and waypoint segment determination.
     """
 
     def __init__(
         self,
-        x: float = 0.0,
-        y: float = 0.0,
-        chi: float = 0.0,
-        U: float = 5.0,
         length: float = 100.0,
         beam: float = 20.0,
-        los_range: float = 400.0,
+        time_constant: float = 10.0,
+        los_range: float = 200.0,
+        current_wp: int = 0,
     ):
         """Initialize obstacle ship model.
 
         Args:
-            x, y: initial position
-            chi: initial heading
-            U: initial speed
-            length: ship length
-            beam: ship beam
-            los_range: LOS range for waypoint following
+            length: ship length (meters)
+            beam: ship beam (meters)
+            time_constant: ship response time constant (seconds)
+            los_range: LOS range for waypoint following (meters)
+            current_wp: initial current waypoint index
         """
-        self.x = x
-        self.y = y
-        self.chi = chi
-        self.U = U
-        self.length = length
-        self.beam = beam
-        self.los_range = los_range
+        super().__init__(
+            x=0.0, y=0.0, chi=0.0, U=3.0,
+            length=length, beam=beam,
+            los_range=los_range,
+            time_constant=time_constant,
+        )
+        self.current_wp = current_wp
 
-        self.waypoints: List[Waypoint] = []
-        self.current_wp = 0
-
-    def set_waypoints(self, waypoints: List[Tuple[float, float]]):
-        """Set obstacle route waypoints."""
-        self.waypoints = [Waypoint(x=wp[0], y=wp[1], id=i) for i, wp in enumerate(waypoints)]
-
-    def predict(self, xs: ShipState4, T: float = 100.0, dt: float = 1.0) -> Tuple[List[float], List[float], List[float], List[float]]:
-        """Predict obstacle trajectory.
+    def predict(
+        self,
+        state: ShipState4,
+        T: float = 100.0,
+        dt: float = 1.0,
+        U_d: Optional[float] = None,
+        chi_d: Optional[float] = None,
+    ) -> np.ndarray:
+        """Predict obstacle ship trajectory with waypoint following.
 
         Args:
-            xs: current ship state
+            state: current ship state
+            T: prediction horizon (seconds)
+            dt: time step (seconds)
+            U_d: desired surge speed (uses current if None)
+            chi_d: desired heading (uses current if None)
+
+        Returns:
+            Predicted trajectory as [4, n_steps] array
+        """
+        if U_d is None:
+            U_d = state.U
+        if chi_d is None:
+            chi_d = state.chi
+
+        n_steps = int(T / dt)
+        trajectory = np.zeros((4, n_steps + 1))
+
+        # Initialize with current state
+        trajectory[0, 0] = state.x
+        trajectory[1, 0] = state.y
+        trajectory[2, 0] = state.chi
+        trajectory[3, 0] = state.U
+
+        # Prepare empty offset and maneuver time arrays (no maneuvers for basic predict)
+        offset_sequence = np.array([])
+        maneuver_times = np.array([])
+
+        # Get waypoints as array - handle both Waypoint objects and tuples
+        if self.waypoints:
+            wp_coords = [(wp.x if hasattr(wp, 'x') else wp[0], 
+                         wp.y if hasattr(wp, 'y') else wp[1]) for wp in self.waypoints]
+            waypoints = np.array(wp_coords).T.reshape(2, -1)
+        else:
+            waypoints = np.zeros((2, 1))
+
+        # Call trajectory prediction
+        return self.predict_trajectory(
+            trajectory=trajectory,
+            offset_sequence=offset_sequence,
+            maneuver_times=maneuver_times,
+            u_d=U_d,
+            chi_d=chi_d,
+            waypoints=waypoints,
+            integration_method="erk1",
+            guidance_method="los",
+            T=T,
+            dt=dt,
+        )
+
+    def determine_active_waypoint_segment(
+        self,
+        waypoints: np.ndarray,
+        state: ShipState4,
+    ) -> int:
+        """Determine which waypoint segment the ship is currently on.
+
+        Args:
+            waypoints: [2, n_waypoints] array of waypoint coordinates
+            state: current ship state [x, y, chi, U]
+
+        Returns:
+            Index of the active waypoint segment
+        """
+        n_waypoints = waypoints.shape[1] - 1
+        if n_waypoints < 1:
+            return 0
+
+        # Find the waypoint closest to the ship
+        min_dist = float('inf')
+        closest_wp = 0
+        for i in range(n_waypoints + 1):
+            dx = waypoints[0, i] - state.x
+            dy = waypoints[1, i] - state.y
+            dist = dx * dx + dy * dy
+            if dist < min_dist:
+                min_dist = dist
+                closest_wp = i
+
+        # Ensure we're moving forward along the waypoint sequence
+        self.current_wp = min(closest_wp, n_waypoints - 1) if n_waypoints > 0 else 0
+        self.current_wp = max(0, self.current_wp)
+
+        return self.current_wp
+
+    def predict_trajectory(
+        self,
+        trajectory: np.ndarray,
+        offset_sequence: np.ndarray,
+        maneuver_times: np.ndarray,
+        u_d: float,
+        chi_d: float,
+        waypoints: np.ndarray,
+        integration_method: str = "erk1",
+        guidance_method: str = "los",
+        T: float = 200.0,
+        dt: float = 0.5,
+    ) -> np.ndarray:
+        """Predict obstacle ship trajectory with heading offset maneuvers.
+
+        Args:
+            trajectory: [4, n_steps] array to store trajectory (modified in place)
+            offset_sequence: heading offsets to apply [n_offsets]
+            maneuver_times: time points to apply maneuvers [n_maneuvers]
+            u_d: desired surge speed
+            chi_d: desired heading
+            waypoints: [2, n_waypoints] array of waypoint coordinates
+            integration_method: "linear" or "erk1"
+            guidance_method: "los" (Line-of-Sight)
             T: prediction horizon (seconds)
             dt: time step (seconds)
 
         Returns:
-            (x, y, chi, U) trajectory arrays
-        """
-        return self.predict_trajectory(T=T, dt=dt)
-
-    def predict_step(self, dt: float = 1.0) -> ShipState4:
-        """Predict one step of obstacle motion.
-
-        Simple constant velocity model with LOS waypoint following.
-
-        Args:
-            dt: time step
-
-        Returns:
-            Updated ship state
-        """
-        if self.waypoints and self.current_wp < len(self.waypoints):
-            wp = self.waypoints[self.current_wp]
-            bearing = math.atan2(wp.y - self.y, wp.x - self.x)
-            dist = distance_2d(self.x, self.y, wp.x, wp.y)
-
-            # Update waypoint
-            if dist < self.los_range * 0.5:
-                self.current_wp = min(self.current_wp + 1, len(self.waypoints) - 1)
-
-            # Heading control
-            desired_chi = bearing
-            chi_error = normalize_angle(desired_chi - self.chi)
-            self.chi = normalize_angle(self.chi + chi_error * 0.1)
-        else:
-            # No waypoints, maintain course
-            pass
-
-        # Update position
-        self.x += self.U * math.cos(self.chi) * dt
-        self.y += self.U * math.sin(self.chi) * dt
-
-        return ShipState4(x=self.x, y=self.y, chi=self.chi, U=self.U)
-
-    def predict_trajectory(
-        self,
-        T: float = 300.0,
-        dt: float = 1.0,
-    ) -> Tuple[List[float], List[float], List[float], List[float]]:
-        """Predict full trajectory.
-
-        Args:
-            T: prediction horizon
-            dt: time step
-
-        Returns:
-            (x, y, chi, U) trajectory arrays
+            Modified trajectory array [4, n_steps]
         """
         n_steps = int(T / dt)
-        traj_x, traj_y, traj_chi, traj_U = [self.x], [self.y], [self.chi], [self.U]
+        n_maneuvers = len(maneuver_times)
 
-        for _ in range(n_steps):
-            state = self.predict_step(dt)
-            traj_x.append(state.x)
-            traj_y.append(state.y)
-            traj_chi.append(state.chi)
-            traj_U.append(state.U)
+        # Initialize with current state
+        trajectory[0, 0] = trajectory[0, 0]  # x
+        trajectory[1, 0] = trajectory[1, 0]  # y
+        trajectory[2, 0] = trajectory[2, 0]  # chi
+        trajectory[3, 0] = trajectory[3, 0]  # U
 
-        return traj_x, traj_y, traj_chi, traj_U
+        # Current state
+        x = trajectory[0, 0]
+        y = trajectory[1, 0]
+        chi = trajectory[2, 0]
+        U = trajectory[3, 0]
+
+        # Determine active waypoint segment
+        state = ShipState4(x=x, y=y, chi=chi, U=U)
+        self.determine_active_waypoint_segment(waypoints, state)
+
+        # Integrate
+        for k in range(n_steps):
+            # Determine heading offset for this time step
+            offset = 0.0
+            for m in range(n_maneuvers):
+                if k * dt >= maneuver_times[m]:
+                    # Apply offset sequence based on maneuver index
+                    offset_idx = m * 2
+                    if offset_idx + 1 < len(offset_sequence):
+                        offset = offset_sequence[offset_idx + 1]
+
+            # Compute desired heading with offset
+            chi_d_maneuver = chi_d + offset
+
+            # LOS guidance
+            if guidance_method == "los" and self.waypoints:
+                # Simplified LOS: use direct heading with offset
+                chi_desired = normalize_angle(chi + offset)
+            else:
+                chi_desired = chi_d_maneuver
+
+            # Integrate using selected method
+            if integration_method == "erk1":
+                new_state = self._predict_erks(
+                    ShipState4(x=x, y=y, chi=chi, U=U),
+                    chi_desired, u_d, dt
+                )
+                x, y, chi, U = new_state.x, new_state.y, new_state.chi, new_state.U
+            else:
+                new_state = self._predict_linear(
+                    ShipState4(x=x, y=y, chi=chi, U=U),
+                    chi_desired, u_d, dt
+                )
+                x, y, chi, U = new_state.x, new_state.y, new_state.chi, new_state.U
+
+            # Store trajectory
+            trajectory[0, k + 1] = x
+            trajectory[1, k + 1] = y
+            trajectory[2, k + 1] = chi
+            trajectory[3, k + 1] = U
+
+        return trajectory

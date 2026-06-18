@@ -1,27 +1,68 @@
 """Type definitions for PSB-MPC Taichi.
 
 Replaces C++ structs with Python dataclasses and Taichi-compatible types.
+Supports both CPU (pure Python) and GPU (Taichi) execution modes.
 """
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 import numpy as np
 
-try:
+if TYPE_CHECKING:
     import taichi as ti
 
-    TI_AVAILABLE = True
-    # Initialize Taichi before using @ti.dataclass
-    ti.init(arch=ti.cpu)
-except ImportError:
-    TI_AVAILABLE = False
+# ============================================================================
+# Taichi initialization (lazy, with GPU fallback)
+# ============================================================================
+
+TI_AVAILABLE = False
+TI_GPU_AVAILABLE = False
+ti: Optional["ti"] = None
+
+def _init_taichi() -> None:
+    """Initialize Taichi with GPU if available, CPU otherwise."""
+    global TI_AVAILABLE, TI_GPU_AVAILABLE, ti
+    try:
+        import taichi as _ti
+        TI_AVAILABLE = True
+
+        # Try CUDA first, fall back to CPU
+        # In Taichi 1.7+, ti.cuda is an Arch enum value, not a module
+        # We try to initialize with CUDA and catch any errors
+        gpu_available = False
+        for arch in [_ti.cuda, _ti.vulkan, _ti.metal]:
+            try:
+                _ti.init(arch=arch, device_memory_ratio=0.5)
+                # Check if the init actually used GPU
+                from taichi import config
+                if config.arch_name not in ('cpu',):
+                    gpu_available = True
+                    TI_GPU_AVAILABLE = True
+                    break
+            except Exception:
+                continue
+
+        if not gpu_available:
+            _ti.init(arch=_ti.cpu)
+            TI_GPU_AVAILABLE = False
+
+        ti = _ti
+    except ImportError:
+        TI_AVAILABLE = False
+        TI_GPU_AVAILABLE = False
+
+
+# Initialize on import
+_init_taichi()
 
 
 # ============================================================================
-# Taichi dataclasses (when running on GPU)
+# Taichi struct and field definitions (when Taichi is available)
 # ============================================================================
 
-if TI_AVAILABLE:
+if TI_AVAILABLE and ti is not None:
+
+    # --- Taichi structs ---
 
     @ti.dataclass
     class ShipState4TI:
@@ -51,23 +92,17 @@ if TI_AVAILABLE:
     @ti.dataclass
     class ObstacleDataTI:
         """Obstacle ship data for collision avoidance."""
-        # Position and velocity
         x: ti.f32
         y: ti.f32
         chi: ti.f32
         U: ti.f32
-        # Dimensions (length, beam)
         length: ti.f32
         beam: ti.f32
-        # COLREGs role: 0=unknown, 1=giving-way, 2=stand-on
         colregs_role: ti.i32
-        # Collision detection parameters
         d_safe: ti.f32
-        # Covariance for probabilistic methods
-        cov_00: ti.f32
-        cov_01: ti.f32
-        cov_10: ti.f32
-        cov_11: ti.f32
+        cov_xx: ti.f32
+        cov_yy: ti.f32
+        cov_xy: ti.f32
 
     @ti.dataclass
     class CPEResultTI:
@@ -80,23 +115,118 @@ if TI_AVAILABLE:
     @ti.dataclass
     class MPCResultTI:
         """MPC solver result."""
-        # Optimal offsets
         offset_chi: ti.f32
         offset_U: ti.f32
-        # Predicted trajectory
         traj_x: ti.types.vector(101, ti.f32)
         traj_y: ti.types.vector(101, ti.f32)
         traj_chi: ti.types.vector(101, ti.f32)
         traj_U: ti.types.vector(101, ti.f32)
-        # Cost breakdown
         total_cost: ti.f32
         path_cost: ti.f32
         collision_cost: ti.f32
         colregs_cost: ti.f32
 
+    # --- Field layouts for batched GPU data ---
+
+    MAX_OBSTACLES = 64
+    MAX_WAYPOINTS = 64
+    MAX_CANDIDATES = 16
+    MAX_TRAJ_STEPS = 301  # T=300, dt=1 => 301 points
+
+    # Obstacle fields (dense, one row per obstacle)
+    obs_x_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    obs_y_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    obs_chi_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    obs_U_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    obs_length_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    obs_beam_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    obs_colregs_f = ti.field(dtype=ti.i32, shape=MAX_OBSTACLES)
+    obs_dsafe_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+
+    # Waypoint fields
+    wp_x_f = ti.field(dtype=ti.f32, shape=MAX_WAYPOINTS)
+    wp_y_f = ti.field(dtype=ti.f32, shape=MAX_WAYPOINTS)
+
+    # Ship state fields
+    ship_x_f = ti.field(dtype=ti.f32, shape=())
+    ship_y_f = ti.field(dtype=ti.f32, shape=())
+    ship_chi_f = ti.field(dtype=ti.f32, shape=())
+    ship_U_f = ti.field(dtype=ti.f32, shape=())
+
+    # Candidate bearing fields (one per candidate)
+    cand_chi_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
+    cand_U_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
+
+    # Trajectory output fields: [candidate_idx, timestep]
+    traj_x_f = ti.field(dtype=ti.f32, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
+    traj_y_f = ti.field(dtype=ti.f32, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
+    traj_chi_f = ti.field(dtype=ti.f32, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
+    traj_U_f = ti.field(dtype=ti.f32, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
+
+    # Cost output fields: [candidate_idx]
+    cost_total_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
+    cost_path_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
+    cost_collision_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
+    cost_colregs_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
+
+    # CPE fields: [obstacle_idx, sample_idx]
+    MAX_CPE_SAMPLES = 2048
+    cpe_samples_x_f = ti.field(dtype=ti.f32, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
+    cpe_samples_y_f = ti.field(dtype=ti.f32, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
+    cpe_weights_f = ti.field(dtype=ti.f32, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
+    cpe_collisions_f = ti.field(dtype=ti.i32, shape=MAX_OBSTACLES)
+    cpe_prob_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+
+    # --- TaichiBuffers class ---
+
+    class TaichiBuffers:
+        """Manages GPU buffer allocation/deallocation.
+
+        Mirrors C++ cudaMalloc/cudaFree pattern. Taichi fields are
+        automatically managed, but this class provides a clean API
+        for resetting and tracking buffer state.
+        """
+
+        def __init__(self, n_obstacles: int = 0, n_candidates: int = 0,
+                     n_traj_steps: int = 0):
+            self.n_obstacles = n_obstacles
+            self.n_candidates = n_candidates
+            self.n_traj_steps = n_traj_steps
+
+        def reset(self, n_obstacles: int = 0, n_candidates: int = 0,
+                  n_traj_steps: int = 0) -> None:
+            """Reset buffer dimensions."""
+            self.n_obstacles = n_obstacles or self.n_obstacles
+            self.n_candidates = n_candidates or self.n_candidates
+            self.n_traj_steps = n_traj_steps or self.n_traj_steps
+
+        def clear(self) -> None:
+            """Deactivate all dynamic fields and reset counts."""
+            for f in [
+                obs_x_f, obs_y_f, obs_chi_f, obs_U_f,
+                obs_length_f, obs_beam_f, obs_colregs_f, obs_dsafe_f,
+                wp_x_f, wp_y_f,
+                ship_x_f, ship_y_f, ship_chi_f, ship_U_f,
+                cand_chi_f, cand_U_f,
+                traj_x_f, traj_y_f, traj_chi_f, traj_U_f,
+                cost_total_f, cost_path_f, cost_collision_f, cost_colregs_f,
+                cpe_samples_x_f, cpe_samples_y_f, cpe_weights_f,
+                cpe_collisions_f, cpe_prob_f,
+            ]:
+                if hasattr(f, 'activate'):
+                    try:
+                        f.deactivate_all()
+                    except Exception:
+                        pass
+
+        @property
+        def is_gpu(self) -> bool:
+            """Check if running on GPU."""
+            return TI_GPU_AVAILABLE
+
 
 # ============================================================================
-# Python dataclasses (CPU / host-side)
+# Python dataclasses (CPU / host-side API compatibility)
 # ============================================================================
 
 
