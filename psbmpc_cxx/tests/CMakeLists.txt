@@ -37,6 +37,7 @@ endfunction()
 
 if (USE_GPU_PSBMPC)
   add_cuda_test(test_cpe_gpu test_cpe_gpu.cu)
+  target_compile_definitions(test_cpe_gpu PRIVATE ENABLE_MATLAB_ENGINE=0)
   add_cuda_test(test_thrust test_thrust.cu)
   add_cuda_test(test_tml test_tml.cu)
   add_cuda_test(test_tml_pdmatrix test_tml_pdmatrix.cu)

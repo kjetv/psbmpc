@@ -89,7 +89,7 @@ int main(void)
     auto start = std::chrono::system_clock::now();
 
     thrust::counting_iterator<unsigned int> index_sequence_begin(seed_thrust);
-    thrust::transform(thrust::device, index_sequence_begin, index_sequence_begin + (N), d_data.begin(), psrngen(0.0, 1.0));
+    thrust::transform(index_sequence_begin, index_sequence_begin + (N), d_data.begin(), psrngen(0.0, 1.0));
 
     o_data = d_data;
 

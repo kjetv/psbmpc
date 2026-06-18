@@ -9,7 +9,9 @@
 #endif
 #include "xoshiro.hpp"
 #include <Eigen/Dense>
-#include <engine.h>
+#if ENABLE_MATLAB_ENGINE
+	#include <engine.h>
+#endif
 
 #include <iostream>
 #include <vector>
@@ -158,6 +160,7 @@ public:
 };
 
 int main(){
+#if ENABLE_MATLAB_ENGINE
 	// Matlab engine setup
 	Engine *ep = engOpen(NULL);
 	if (ep == NULL)
@@ -166,6 +169,7 @@ int main(){
 	}
 	
 	char buffer[BUFSIZE+1];
+#endif
 
 	std::random_device seed;
 
@@ -363,8 +367,9 @@ int main(){
 	CPE_functor cpe_functor_CE(cpe_device_ptr, PSBMPC_LIB::CE, xs_p_device_ptr, xs_i_p_device_ptr, P_i_p_device_ptr, P_c_i_device_ptr, (float)dt);
 
 	thrust::device_vector<unsigned int> sample_dvec(1);
-	thrust::sequence(sample_dvec.begin(), sample_dvec.end(), distribution(eng1));
-	//thrust::sequence(sample_dvec.begin(), sample_dvec.end(), 3);
+	// Generate on host since thrust::generate passes const ref but PRNG needs non-const
+	sample_dvec[0] = distribution(eng1);
+	//thrust::fill(sample_dvec.begin(), sample_dvec.end(), 3);
 
 	auto cpe_tuple_begin = thrust::make_zip_iterator(thrust::make_tuple(sample_dvec.begin()));
 	auto cpe_tuple_end = thrust::make_zip_iterator(thrust::make_tuple(sample_dvec.end()));
@@ -449,6 +454,7 @@ int main(){
 	cudaFree(P_c_i_device_ptr);
 	cuda_check_errors("CudaFree of P_c_i failed.");
 
+#if ENABLE_MATLAB_ENGINE
 	//*****************************************************************************************************************
 	// Send data to matlab
 	//*****************************************************************************************************************
@@ -521,6 +527,7 @@ int main(){
 	mxDestroyArray(Pcoll_CE);
 	mxDestroyArray(Pcoll_MCSKF); 
 	engClose(ep);
+#endif
 
 	return 0;
 }
