@@ -26,7 +26,7 @@ class TestCostGPUAccuracy:
 
         cost_eval = p.Path_Grounding_Cost()
         result_cpu = cost_eval.calculate_path_cost(traj_x, traj_y, waypoints)
-        result_gpu = cost_eval.calculate_path_cost_gpu(traj_x, traj_y, waypoints)
+        result_gpu = cost_eval._calculate_path_cost_gpu(traj_x, traj_y, waypoints)
 
         assert result_gpu == pytest.approx(result_cpu, rel=1e-3, abs=1e-6)
 
@@ -42,99 +42,95 @@ class TestCostGPUAccuracy:
 
         cost_eval = p.Path_Grounding_Cost()
         result_cpu = cost_eval.calculate_path_cost(traj_x, traj_y, waypoints)
-        result_gpu = cost_eval.calculate_path_cost_gpu(traj_x, traj_y, waypoints)
+        result_gpu = cost_eval._calculate_path_cost_gpu(traj_x, traj_y, waypoints)
 
         assert result_gpu == pytest.approx(result_cpu, rel=1e-3, abs=1e-6)
 
     def test_grounding_cost_gpu_vs_cpu(self):
         """Grounding cost GPU vs CPU comparison."""
-        waypoints = [
-            p.Waypoint(x=0.0, y=0.0),
-            p.Waypoint(x=1000.0, y=0.0),
-        ]
         traj_x = [0.0, 500.0, 1000.0]
         traj_y = [0.0, 0.0, 0.0]
+        traj_chi = [0.0, 0.0, 0.0]
 
-        # Grounding hazard near the trajectory
+        # Grounding hazard near the trajectory (as lists of [x, y, chi, length, beam])
         hazards = [
-            p.GroundingHazard(
-                polygon=[(-50.0, -50.0), (50.0, -50.0), (50.0, 50.0), (-50.0, 50.0)],
-            )
+            [0.0, 0.0, 0.0, 100.0, 100.0],  # x, y, chi, length, beam
         ]
 
         cost_eval = p.Path_Grounding_Cost()
-        result_cpu = cost_eval.calculate_grounding_cost(traj_x, traj_y, hazards)
-        result_gpu = cost_eval.calculate_grounding_cost_gpu(traj_x, traj_y, hazards)
+        result_cpu = cost_eval.calculate_grounding_cost(traj_x, traj_y, traj_chi, hazards, 150.0, 25.0)
+        result_gpu = cost_eval._calculate_grounding_cost_gpu(traj_x, traj_y, traj_chi, hazards, 150.0, 25.0)
 
         assert result_gpu == pytest.approx(result_cpu, rel=1e-3, abs=1e-6)
 
     def test_grounding_cost_gpu_vs_cpu_no_hazard(self):
         """Grounding cost with no hazards."""
-        waypoints = [
-            p.Waypoint(x=0.0, y=0.0),
-            p.Waypoint(x=1000.0, y=0.0),
-        ]
         traj_x = [0.0, 500.0, 1000.0]
         traj_y = [0.0, 0.0, 0.0]
+        traj_chi = [0.0, 0.0, 0.0]
         hazards = []
 
         cost_eval = p.Path_Grounding_Cost()
-        result_cpu = cost_eval.calculate_grounding_cost(traj_x, traj_y, hazards)
-        result_gpu = cost_eval.calculate_grounding_cost_gpu(traj_x, traj_y, hazards)
+        result_cpu = cost_eval.calculate_grounding_cost(traj_x, traj_y, traj_chi, hazards, 150.0, 25.0)
+        result_gpu = cost_eval._calculate_grounding_cost_gpu(traj_x, traj_y, traj_chi, hazards, 150.0, 25.0)
 
         assert result_gpu == pytest.approx(result_cpu, rel=1e-3, abs=1e-6)
 
     def test_deviation_cost_gpu_vs_cpu(self):
         """Deviation cost GPU vs CPU comparison."""
-        waypoints = [
-            p.Waypoint(x=0.0, y=0.0),
-            p.Waypoint(x=1000.0, y=0.0),
-        ]
-        traj_x = [0.0, 500.0, 1000.0]
-        traj_y = [0.0, 0.0, 0.0]
+        # Deviation cost uses heading and surge offsets, not waypoints
+        n_M = 5
+        offsets_chi = [0.0, 0.1, -0.1, 0.05, -0.05]
+        offsets_U = [0.0, 0.5, -0.5, 0.3, -0.3]
+        last_optimal_chi = [0.0] * n_M
+        last_optimal_U = [0.0] * n_M
 
         cost_eval = p.Path_Grounding_Cost()
-        result_cpu = cost_eval.calculate_deviation_cost(traj_x, traj_y, waypoints)
-        result_gpu = cost_eval.calculate_deviation_cost_gpu(traj_x, traj_y, waypoints)
+        result_cpu = cost_eval.calculate_deviation_cost(offsets_chi, offsets_U, last_optimal_chi, last_optimal_U)
+        result_gpu = cost_eval._calculate_deviation_cost_gpu(offsets_chi, offsets_U, last_optimal_chi, last_optimal_U)
 
         assert result_gpu == pytest.approx(result_cpu, rel=1e-3, abs=1e-6)
 
     def test_dynamic_obstacle_cost_gpu_vs_cpu(self):
         """Dynamic obstacle cost GPU vs CPU comparison."""
-        obstacles = [
-            p.ObstacleData(
-                x=300.0, y=0.0, chi=math.pi, U=2.0,
-                length=150.0, beam=25.0, d_safe=300.0,
-            ),
-            p.ObstacleData(
-                x=500.0, y=100.0, chi=math.pi * 0.5, U=3.0,
-                length=150.0, beam=25.0, d_safe=300.0,
-            ),
-        ]
+        traj_x = [0.0, 100.0, 200.0, 300.0, 400.0, 500.0]
+        traj_y = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        traj_chi = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        obstacle = p.ObstacleData(
+            x=300.0, y=0.0, chi=math.pi, U=2.0,
+            length=150.0, beam=25.0, d_safe=300.0,
+        )
 
         cost_eval = p.Dynamic_Obstacle_Cost()
-        result_cpu = cost_eval.calculate_dynamic_obstacle_cost(obstacles)
-        result_gpu = cost_eval.calculate_dynamic_obstacle_cost_gpu(obstacles)
+        result_cpu = cost_eval.calculate_dynamic_obstacle_cost(traj_x, traj_y, traj_chi, obstacle)
+        result_gpu = cost_eval._calculate_dynamic_obstacle_cost_gpu(traj_x, traj_y, traj_chi, obstacle)
 
         assert result_gpu == pytest.approx(result_cpu, rel=1e-3, abs=1e-6)
 
     def test_colregs_cost_gpu_vs_cpu(self):
         """COLREGS cost GPU vs CPU comparison."""
-        obstacles = [
-            p.ObstacleData(
-                x=300.0, y=0.0, chi=math.pi, U=2.0,
-                length=150.0, beam=25.0, d_safe=300.0,
-            ),
-        ]
+        traj_x = [0.0, 100.0, 200.0, 300.0, 400.0]
+        traj_y = [0.0, 0.0, 0.0, 0.0, 0.0]
+
+        obstacle = p.ObstacleData(
+            x=300.0, y=0.0, chi=math.pi, U=2.0,
+            length=150.0, beam=25.0, d_safe=300.0,
+        )
 
         cost_eval = p.COLREGS_Evaluator()
-        result_cpu = cost_eval.calculate_colregs_cost(obstacles)
-        result_gpu = cost_eval.calculate_colregs_cost_gpu(obstacles)
+        # situation: 0=none, 1=crossing_port, 2=head-on, 3=crossing_stb, 4=overtaking
+        situation = "head-on"
+        result_cpu = cost_eval.calculate_colregs_cost(situation, traj_x, traj_y, obstacle)
+        result_gpu = cost_eval._calculate_colregs_cost_gpu(situation, traj_x, traj_y, obstacle)
 
         assert result_gpu == pytest.approx(result_cpu, rel=1e-3, abs=1e-6)
 
     def test_colregs_cost_gpu_vs_cpu_multiple(self):
-        """COLREGS cost with multiple obstacles."""
+        """COLREGS cost with multiple obstacles - test each separately."""
+        traj_x = [0.0, 100.0, 200.0, 300.0, 400.0]
+        traj_y = [0.0, 0.0, 0.0, 0.0, 0.0]
+
         obstacles = [
             p.ObstacleData(
                 x=300.0, y=0.0, chi=math.pi, U=2.0,
@@ -151,7 +147,11 @@ class TestCostGPUAccuracy:
         ]
 
         cost_eval = p.COLREGS_Evaluator()
-        result_cpu = cost_eval.calculate_colregs_cost(obstacles)
-        result_gpu = cost_eval.calculate_colregs_cost_gpu(obstacles)
+        situation = "head-on"
+        total_cpu = 0.0
+        total_gpu = 0.0
+        for obs in obstacles:
+            total_cpu += cost_eval.calculate_colregs_cost(situation, traj_x, traj_y, obs)
+            total_gpu += cost_eval._calculate_colregs_cost_gpu(situation, traj_x, traj_y, obs)
 
-        assert result_gpu == pytest.approx(result_cpu, rel=1e-3, abs=1e-6)
+        assert total_gpu == pytest.approx(total_cpu, rel=1e-3, abs=1e-6)
