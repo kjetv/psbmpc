@@ -33,7 +33,6 @@
         "ENABLE_TEST_FILE_PLOTTING": "0"
     },
     "postCreateCommand": "bash /workspace/scripts/build_and_test.sh",
-    // "workspaceFolder": "/workspace",
     "mounts": [
         "source=${localWorkspaceFolder},target=/workspace,type=bind"
     ],
