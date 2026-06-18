@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "psbmpc-taichi"
+version = "0.1.0"
+description = "GPU-accelerated PSB-MPC for autonomous ship collision avoidance using Taichi"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "taichi>=1.7.0",
+    "numpy>=1.21.0",
+    "scipy>=1.7.0",
+    "pyproj>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-benchmark>=4.0",
+    "matplotlib>=3.5.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.setuptools.packages.find]
+include = ["psbmpc_taichi*"]

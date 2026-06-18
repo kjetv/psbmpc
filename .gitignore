@@ -54,3 +54,8 @@ intention_model_catkin_ws/
 psbmpc_cxx/build/*
 psbmpc_cxx/debug/*
 psbmpc_cxx/release/*
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
