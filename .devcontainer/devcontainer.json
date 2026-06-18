@@ -1,0 +1,43 @@
+{
+    "name": "psbmpc-cxx-dev",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--gpus=all"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.cmake-tools",
+                "ms-vscode.cpptools-extension-pack",
+                "nvidia.nsight-vscode-edition"
+            ],
+            "settings": {
+                "cmake.buildDirectory": "${workspaceFolder}/psbmpc_cxx/build",
+                "cmake.configureOnOpen": false,
+                "cmake.buildBeforeRun": false,
+                "C_Cpp.default.configurationProvider": [
+                    "ms-vscode.cmake-tools"
+                ]
+            }
+        }
+    },
+    "remoteEnv": {
+        "USE_GPU_PSBMPC": "1",
+        "CMAKE_BUILD_TYPE": "Release",
+        "OWNSHIP_TYPE": "0",
+        "ENABLE_PSBMPC_DEBUGGING": "0",
+        "ENABLE_TEST_FILE_PLOTTING": "0"
+    },
+    "postCreateCommand": "bash /workspace/scripts/build_and_test.sh",
+    // "workspaceFolder": "/workspace",
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/workspace,type=bind"
+    ],
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {}
+    }
+}
