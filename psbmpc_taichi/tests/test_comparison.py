@@ -28,7 +28,7 @@ class TestNumericalComparison:
             length=150.0, beam=25.0, d_safe=300.0,
         )
 
-        cpe = p.CPE(max_iter=20, tolerance=1e-4, n_samples=5000)
+        cpe = p.CPE(max_iter=50, tolerance=1e-5, n_samples=10000, use_gpu=False)
         result = cpe.ce_estimate(ownship, obstacle)
 
         # With obstacle 280m away and d_safe=300m, collision probability

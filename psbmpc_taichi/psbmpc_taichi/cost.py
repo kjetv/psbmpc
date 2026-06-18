@@ -36,13 +36,13 @@ from .utils import (
 
 # Helper functions (ti.func)
 @ti.func
-def _ti_distance_2d(x1: ti.f32, y1: ti.f32, x2: ti.f32, y2: ti.f32) -> ti.f32:
+def _ti_distance_2d(x1: ti.f64, y1: ti.f64, x2: ti.f64, y2: ti.f64) -> ti.f64:
     dx = x2 - x1
     dy = y2 - y1
     return ti.sqrt(dx * dx + dy * dy)
 
 @ti.func
-def _ti_normalize_angle(angle: ti.f32) -> ti.f32:
+def _ti_normalize_angle(angle: ti.f64) -> ti.f64:
     while angle > math.pi:
         angle -= 2.0 * math.pi
     while angle < -math.pi:
@@ -51,10 +51,10 @@ def _ti_normalize_angle(angle: ti.f32) -> ti.f32:
 
 @ti.func
 def _ti_point_to_segment_distance(
-    px: ti.f32, py: ti.f32,
-    ax: ti.f32, ay: ti.f32,
-    bx: ti.f32, by: ti.f32,
-) -> ti.f32:
+    px: ti.f64, py: ti.f64,
+    ax: ti.f64, ay: ti.f64,
+    bx: ti.f64, by: ti.f64,
+) -> ti.f64:
     """Compute squared distance from point P to segment AB."""
     abx = bx - ax
     aby = by - ay
@@ -78,8 +78,8 @@ def _ti_point_to_segment_distance(
 
 @ti.func
 def _ti_ship_polygon_vertex(
-    cx: ti.f32, cy: ti.f32, chi: ti.f32,
-    length: ti.f32, beam: ti.f32,
+    cx: ti.f64, cy: ti.f64, chi: ti.f64,
+    length: ti.f64, beam: ti.f64,
     idx: int,
     out_x: ti.types.ndarray(),
     out_y: ti.types.ndarray(),
@@ -90,20 +90,20 @@ def _ti_ship_polygon_vertex(
     half_b = beam * 0.5
 
     # Local coordinates
-    local_x = ti.cast(0.0, ti.f32)
-    local_y = ti.cast(0.0, ti.f32)
+    local_x = ti.cast(0.0, ti.f64)
+    local_y = ti.cast(0.0, ti.f64)
 
     if idx == 0:
         local_x = half_l
-        local_y = ti.cast(0.0, ti.f32)
+        local_y = ti.cast(0.0, ti.f64)
     elif idx == 1:
-        local_x = ti.cast(-0.3, ti.f32) * half_l
+        local_x = ti.cast(-0.3, ti.f64) * half_l
         local_y = half_b
     elif idx == 2:
         local_x = -half_l
-        local_y = ti.cast(0.0, ti.f32)
+        local_y = ti.cast(0.0, ti.f64)
     elif idx == 3:
-        local_x = ti.cast(-0.3, ti.f32) * half_l
+        local_x = ti.cast(-0.3, ti.f64) * half_l
         local_y = -half_b
 
     # Rotate
@@ -115,8 +115,8 @@ def _ti_ship_polygon_vertex(
 # Kernels (ti.kernel)
 @ti.kernel
 def _ti_compute_ship_polygon(
-    cx: ti.f32, cy: ti.f32, chi: ti.f32,
-    length: ti.f32, beam: ti.f32,
+    cx: ti.f64, cy: ti.f64, chi: ti.f64,
+    length: ti.f64, beam: ti.f64,
     vertices_x: ti.types.ndarray(),
     vertices_y: ti.types.ndarray(),
 ):
@@ -131,20 +131,20 @@ def _ti_path_cost_kernel(
     waypoints_x: ti.types.ndarray(),
     waypoints_y: ti.types.ndarray(),
     n_wps: int,
-    init_x: ti.f32,
-    init_y: ti.f32,
-    w_path: ti.f32,
-    w_deviation: ti.f32,
+    init_x: ti.f64,
+    init_y: ti.f64,
+    w_path: ti.f64,
+    w_deviation: ti.f64,
     result: ti.types.ndarray(),
 ):
-    total_cost = ti.cast(0.0, ti.f32)
+    total_cost = ti.cast(0.0, ti.f64)
 
     for t in range(1, n_steps):
         tx = traj_x[t]
         ty = traj_y[t]
 
         # Find nearest waypoint
-        min_dist = ti.cast(1e18, ti.f32)
+        min_dist = ti.cast(1e18, ti.f64)
         nearest_idx = 0
 
         for j in range(n_wps):
@@ -186,7 +186,7 @@ def _ti_path_cost_kernel(
 @ti.kernel
 def _ti_grounding_cost_kernel(
     traj_x: ti.types.ndarray(),
-    traj_y: ti.f32,
+    traj_y: ti.f64,
     traj_chi: ti.types.ndarray(),
     n_steps: int,
     hazard_x: ti.types.ndarray(),
@@ -195,13 +195,13 @@ def _ti_grounding_cost_kernel(
     hazard_length: ti.types.ndarray(),
     hazard_beam: ti.types.ndarray(),
     n_hazards: int,
-    ship_length: ti.f32,
-    ship_beam: ti.f32,
-    kappa_GN: ti.f32,
+    ship_length: ti.f64,
+    ship_beam: ti.f64,
+    kappa_GN: ti.f64,
     result: ti.types.ndarray(),
 ):
-    total_cost = ti.cast(0.0, ti.f32)
-    d_safe = ti.cast(100.0, ti.f32)
+    total_cost = ti.cast(0.0, ti.f64)
+    d_safe = ti.cast(100.0, ti.f64)
 
     for t in range(n_steps):
         tx = traj_x[t]
@@ -209,8 +209,8 @@ def _ti_grounding_cost_kernel(
         chi = traj_chi[t]
 
         # Compute ship polygon vertices
-        ship_vx = ti.Vector.zeros(4, ti.f32)
-        ship_vy = ti.Vector.zeros(4, ti.f32)
+        ship_vx = ti.Vector.zeros(4, ti.f64)
+        ship_vy = ti.Vector.zeros(4, ti.f64)
         _ti_compute_ship_polygon(tx, ty, chi, ship_length, ship_beam, ship_vx, ship_vy)
 
         for h in range(n_hazards):
@@ -221,8 +221,8 @@ def _ti_grounding_cost_kernel(
             h_beam = hazard_beam[h]
 
             # Compute hazard polygon vertices
-            h_vx = ti.Vector.zeros(4, ti.f32)
-            h_vy = ti.Vector.zeros(4, ti.f32)
+            h_vx = ti.Vector.zeros(4, ti.f64)
+            h_vy = ti.Vector.zeros(4, ti.f64)
             _ti_compute_ship_polygon(hx, hy, h_chi, h_len, h_beam, h_vx, h_vy)
 
             # Check if ship center inside hazard (simplified: check against hazard center)
@@ -232,7 +232,7 @@ def _ti_grounding_cost_kernel(
                 continue
 
             # Minimum distance between ship and hazard polygons
-            min_dist = ti.cast(1e18, ti.f32)
+            min_dist = ti.cast(1e18, ti.f64)
 
             for i in range(4):
                 for j in range(4):
@@ -257,10 +257,10 @@ def _ti_deviation_cost_kernel(
     last_chi: ti.types.ndarray(),
     last_U: ti.types.ndarray(),
     n_M: int,
-    w_deviation: ti.f32,
+    w_deviation: ti.f64,
     result: ti.types.ndarray(),
 ):
-    cost = ti.cast(0.0, ti.f32)
+    cost = ti.cast(0.0, ti.f64)
 
     for i in range(n_M):
         chi_diff = offsets_chi[i] - last_chi[i]
@@ -274,19 +274,19 @@ def _ti_dynamic_obstacle_cost_kernel(
     traj_x: ti.types.ndarray(),
     traj_y: ti.types.ndarray(),
     n_steps: int,
-    obs_x: ti.f32,
-    obs_y: ti.f32,
-    obs_U: ti.f32,
-    d_safe: ti.f32,
-    cpe_probability: ti.f32,
-    w_collision: ti.f32,
-    kappa_SO: ti.f32,
+    obs_x: ti.f64,
+    obs_y: ti.f64,
+    obs_U: ti.f64,
+    d_safe: ti.f64,
+    cpe_probability: ti.f64,
+    w_collision: ti.f64,
+    kappa_SO: ti.f64,
     colregs_role: int,
-    time_horizon: ti.f32,
-    dt: ti.f32,
+    time_horizon: ti.f64,
+    dt: ti.f64,
     result: ti.types.ndarray(),
 ):
-    total_cost = ti.cast(0.0, ti.f32)
+    total_cost = ti.cast(0.0, ti.f64)
 
     # Base collision cost
     collision_cost = cpe_probability * w_collision
@@ -300,7 +300,7 @@ def _ti_dynamic_obstacle_cost_kernel(
     # Time-discounted cost
     n_steps_actual = ti.min(ti.cast(int(time_horizon / dt), ti.i32), n_steps)
     for t in range(n_steps_actual):
-        discount = ti.cast(1.0, ti.f32) - ti.cast(t, ti.f32) / ti.cast(n_steps_actual, ti.f32)
+        discount = ti.cast(1.0, ti.f64) - ti.cast(t, ti.f64) / ti.cast(n_steps_actual, ti.f64)
         total_cost += collision_cost * discount
 
     # Proximity-based cost
@@ -313,7 +313,7 @@ def _ti_dynamic_obstacle_cost_kernel(
             obs_U_safe = ti.select(obs_U > 0.0, obs_U, 1.0)
             ttc = dist / obs_U_safe
             if ttc < time_horizon:
-                proximity_cost = w_collision * ti.exp(-ttc / ti.cast(30.0, ti.f32))
+                proximity_cost = w_collision * ti.exp(-ttc / ti.cast(30.0, ti.f64))
                 total_cost += proximity_cost
 
     result[0] = total_cost
@@ -323,19 +323,19 @@ def _ti_colregs_cost_kernel(
     traj_x: ti.types.ndarray(),
     traj_y: ti.types.ndarray(),
     n_steps: int,
-    obs_x: ti.f32,
-    obs_y: ti.f32,
-    d_safe: ti.f32,
+    obs_x: ti.f64,
+    obs_y: ti.f64,
+    d_safe: ti.f64,
     situation: ti.i32,  # 0=none, 1=crossing_port, 2=head-on, 3=crossing_stb, 4=overtaking
-    kappa_GW: ti.f32,
-    kappa_SO: ti.f32,
+    kappa_GW: ti.f64,
+    kappa_SO: ti.f64,
     result: ti.types.ndarray(),
 ):
-    total_cost = ti.cast(0.0, ti.f32)
+    total_cost = ti.cast(0.0, ti.f64)
 
     # Check if crossing_port or head-on (giving-way)
     if situation == 1 or situation == 2:
-        min_dist = ti.cast(1e18, ti.f32)
+        min_dist = ti.cast(1e18, ti.f64)
         for t in range(n_steps):
             dist = _ti_distance_2d(traj_x[t], traj_y[t], obs_x, obs_y)
             if dist < min_dist:
@@ -1129,9 +1129,9 @@ class COLREGS_Evaluator:
         traj_x_np = np.array(traj_x, dtype=np.float32)
         traj_y_np = np.array(traj_y, dtype=np.float32)
 
-        traj_x_taichi = ti.ndarray(ti.f32, n_steps)
-        traj_y_taichi = ti.ndarray(ti.f32, n_steps)
-        result_taichi = ti.ndarray(ti.f32, 1)
+        traj_x_taichi = ti.ndarray(ti.f64, n_steps)
+        traj_y_taichi = ti.ndarray(ti.f64, n_steps)
+        result_taichi = ti.ndarray(ti.f64, 1)
 
         traj_x_taichi.from_numpy(traj_x_np)
         traj_y_taichi.from_numpy(traj_y_np)

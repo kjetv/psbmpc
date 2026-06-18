@@ -44,13 +44,13 @@ def _init_mpc_kernels():
     """Initialize Taichi GPU kernels for MPC solver orchestration."""
 
     @ti.func
-    def _ti_distance_2d(x1: ti.f32, y1: ti.f32, x2: ti.f32, y2: ti.f32) -> ti.f32:
+    def _ti_distance_2d(x1: ti.f64, y1: ti.f64, x2: ti.f64, y2: ti.f64) -> ti.f64:
         dx = x2 - x1
         dy = y2 - y1
         return ti.sqrt(dx * dx + dy * dy)
 
     @ti.func
-    def _ti_normalize_angle(angle: ti.f32) -> ti.f32:
+    def _ti_normalize_angle(angle: ti.f64) -> ti.f64:
         while angle > math.pi:
             angle -= 2.0 * math.pi
         while angle < -math.pi:
@@ -59,16 +59,16 @@ def _init_mpc_kernels():
 
     @ti.kernel
     def _ti_predict_trajectory_batch(
-        init_x: ti.f32,
-        init_y: ti.f32,
-        init_chi: ti.f32,
-        init_U: ti.f32,
-        offset_chi: ti.f32,
+        init_x: ti.f64,
+        init_y: ti.f64,
+        init_chi: ti.f64,
+        init_U: ti.f64,
+        offset_chi: ti.f64,
         waypoints_x: ti.types.ndarray(),
         waypoints_y: ti.types.ndarray(),
         n_wps: int,
-        T: ti.f32,
-        dt: ti.f32,
+        T: ti.f64,
+        dt: ti.f64,
         n_M: int,
         traj_x: ti.types.ndarray(),
         traj_y: ti.types.ndarray(),
@@ -76,8 +76,8 @@ def _init_mpc_kernels():
         traj_U: ti.types.ndarray(),
     ):
         """Predict trajectory with given heading offset (single candidate)."""
-        T = ti.cast(T, ti.f32)
-        dt = ti.cast(dt, ti.f32)
+        T = ti.cast(T, ti.f64)
+        dt = ti.cast(dt, ti.f64)
         n_steps = ti.cast(0, ti.i32)
         tmp_T = T
         while tmp_T > 0.0:
@@ -96,7 +96,7 @@ def _init_mpc_kernels():
 
         for i in range(1, n_steps):
             # Waypoint following
-            min_dist = ti.cast(1e18, ti.f32)
+            min_dist = ti.cast(1e18, ti.f64)
             nearest_idx = 0
             for j in range(n_wps):
                 dx = x - waypoints_x[j]
@@ -115,11 +115,11 @@ def _init_mpc_kernels():
             heading_error = _ti_normalize_angle(target_chi - chi)
 
             # Simple kinematic model
-            K = ti.cast(0.5, ti.f32)
-            tau = ti.cast(5.0, ti.f32)
+            K = ti.cast(0.5, ti.f64)
+            tau = ti.cast(5.0, ti.f64)
             r = K / tau * _ti_normalize_angle(heading_error - chi)
-            r = ti.select(ti.abs(r) > ti.cast(0.15, ti.f32),
-                         ti.select(r > 0.0, ti.cast(0.15, ti.f32), -ti.cast(0.15, ti.f32)), r)
+            r = ti.select(ti.abs(r) > ti.cast(0.15, ti.f64),
+                         ti.select(r > 0.0, ti.cast(0.15, ti.f64), -ti.cast(0.15, ti.f64)), r)
 
             new_chi = chi + r * dt
             new_chi = _ti_normalize_angle(new_chi)
@@ -143,19 +143,19 @@ def _init_mpc_kernels():
         waypoints_x: ti.types.ndarray(),
         waypoints_y: ti.types.ndarray(),
         n_wps: int,
-        init_x: ti.f32,
-        init_y: ti.f32,
-        w_path: ti.f32,
-        w_deviation: ti.f32,
+        init_x: ti.f64,
+        init_y: ti.f64,
+        w_path: ti.f64,
+        w_deviation: ti.f64,
         result: ti.types.ndarray(),
     ):
-        total_cost = ti.cast(0.0, ti.f32)
+        total_cost = ti.cast(0.0, ti.f64)
 
         for t in range(1, n_steps):
             tx = traj_x[t]
             ty = traj_y[t]
 
-            min_dist = ti.cast(1e18, ti.f32)
+            min_dist = ti.cast(1e18, ti.f64)
             nearest_idx = 0
             for j in range(n_wps):
                 dx = tx - waypoints_x[j]
@@ -196,14 +196,14 @@ def _init_mpc_kernels():
         traj_x: ti.types.ndarray(),
         traj_y: ti.types.ndarray(),
         n_steps: int,
-        obs_x: ti.f32,
-        obs_y: ti.f32,
-        d_safe: ti.f32,
-        cpe_probability: ti.f32,
-        w_collision: ti.f32,
+        obs_x: ti.f64,
+        obs_y: ti.f64,
+        d_safe: ti.f64,
+        cpe_probability: ti.f64,
+        w_collision: ti.f64,
         result: ti.types.ndarray(),
     ):
-        total_cost = ti.cast(0.0, ti.f32)
+        total_cost = ti.cast(0.0, ti.f64)
 
         # CPE-based collision cost
         if cpe_probability > 0.0:
@@ -226,7 +226,7 @@ def _init_mpc_kernels():
         n_candidates: int,
         result_idx: ti.types.ndarray(),
     ):
-        min_cost = ti.cast(1e18, ti.f32)
+        min_cost = ti.cast(1e18, ti.f64)
         min_idx = 0
         for i in range(n_candidates):
             if costs[i] < min_cost:

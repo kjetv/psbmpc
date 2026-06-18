@@ -25,7 +25,8 @@ class TestMPCGPUAccuracy:
 
     def test_solver_gpu_vs_cpu_no_obstacles(self):
         """GPU vs CPU MPC with no obstacles (path cost only)."""
-        solver = p.PSBMPC_Solver()
+        params = p.PSBMPCParameters()
+        solver = p.PSBMPC_Solver(params)
         xs = p.ShipState4(x=0.0, y=0.0, chi=0.0, U=5.0)
         waypoints = [
             p.Waypoint(x=1000.0, y=0.0),
@@ -42,7 +43,8 @@ class TestMPCGPUAccuracy:
 
     def test_solver_gpu_vs_cpu_single_obstacle(self):
         """GPU vs CPU MPC with single obstacle."""
-        solver = p.PSBMPC_Solver()
+        params = p.PSBMPCParameters()
+        solver = p.PSBMPC_Solver(params)
         xs = p.ShipState4(x=0.0, y=0.0, chi=0.0, U=5.0)
         obstacles = self._make_obstacles([(300.0, 0.0)])
         waypoints = [
@@ -59,7 +61,8 @@ class TestMPCGPUAccuracy:
 
     def test_solver_gpu_vs_cpu_multiple_obstacles(self):
         """GPU vs CPU MPC with multiple obstacles."""
-        solver = p.PSBMPC_Solver()
+        params = p.PSBMPCParameters()
+        solver = p.PSBMPC_Solver(params)
         xs = p.ShipState4(x=0.0, y=0.0, chi=0.0, U=5.0)
         obstacles = self._make_obstacles([
             (200.0, 100.0),
@@ -78,7 +81,8 @@ class TestMPCGPUAccuracy:
 
     def test_solver_gpu_trajectory_shape(self):
         """GPU MPC should return trajectory with correct shape."""
-        solver = p.PSBMPC_Solver()
+        params = p.PSBMPCParameters()
+        solver = p.PSBMPC_Solver(params)
         xs = p.ShipState4(x=0.0, y=0.0, chi=0.0, U=5.0)
         waypoints = [
             p.Waypoint(x=1000.0, y=0.0),
@@ -94,7 +98,8 @@ class TestMPCGPUAccuracy:
 
     def test_solver_gpu_vs_cpu_deviated_heading(self):
         """GPU vs CPU MPC with deviated heading (tests COLREGS path)."""
-        solver = p.PSBMPC_Solver()
+        params = p.PSBMPCParameters()
+        solver = p.PSBMPC_Solver(params)
         xs = p.ShipState4(x=0.0, y=0.0, chi=math.pi / 4, U=5.0)
         obstacles = self._make_obstacles([(500.0, 0.0)])
         waypoints = [

@@ -30,7 +30,7 @@ if TI_AVAILABLE and ti is not None:
     # Gaussian sampling using Box-Muller transform
     # ========================================================================
     @ti.func
-    def _box_muller_normal(mu: ti.f32, sigma: ti.f32, out0: ti.types.ndarray(), out1: ti.types.ndarray()) -> None:
+    def _box_muller_normal(mu: ti.f64, sigma: ti.f64, out0: ti.types.ndarray(), out1: ti.types.ndarray()) -> None:
         """Generate two standard normal samples using Box-Muller transform.
 
         Args:
@@ -39,8 +39,8 @@ if TI_AVAILABLE and ti is not None:
             out0: output array for first sample
             out1: output array for second sample
         """
-        u1 = ti.max(ti.random(ti.f32), 1e-10)
-        u2 = ti.random(ti.f32)
+        u1 = ti.max(ti.random(ti.f64), 1e-10)
+        u2 = ti.random(ti.f64)
         z0 = ti.sqrt(-2.0 * ti.log(u1)) * ti.cos(6.283185307179586 * u2)
         z1 = ti.sqrt(-2.0 * ti.log(u1)) * ti.sin(6.283185307179586 * u2)
         out0[0] = mu + sigma * z0
@@ -51,9 +51,9 @@ if TI_AVAILABLE and ti is not None:
     # ========================================================================
     @ti.func
     def _check_collision_2d_taichi(
-        sample_x: ti.f32, sample_y: ti.f32,
-        ownship_length: ti.f32, obstacle_length: ti.f32,
-        d_safe: ti.f32, collision_margin: ti.f32,
+        sample_x: ti.f64, sample_y: ti.f64,
+        ownship_length: ti.f64, obstacle_length: ti.f64,
+        d_safe: ti.f64, collision_margin: ti.f64,
     ) -> ti.i32:
         """Check if a sample results in collision (2D circular approximation).
 
@@ -76,10 +76,10 @@ if TI_AVAILABLE and ti is not None:
     # ========================================================================
     @ti.func
     def _check_collision_4d_taichi(
-        rel_x: ti.f32, rel_y: ti.f32,
-        rel_vx: ti.f32, rel_vy: ti.f32,
-        ownship_length: ti.f32, obstacle_length: ti.f32,
-        d_safe: ti.f32, collision_margin: ti.f32,
+        rel_x: ti.f64, rel_y: ti.f64,
+        rel_vx: ti.f64, rel_vy: ti.f64,
+        ownship_length: ti.f64, obstacle_length: ti.f64,
+        d_safe: ti.f64, collision_margin: ti.f64,
     ) -> ti.i32:
         """Check collision using 4D state (position + velocity).
 
@@ -121,10 +121,10 @@ if TI_AVAILABLE and ti is not None:
     # 1D Gaussian PDF (kernel)
     # ========================================================================
     @ti.func
-    def _gaussian_pdf_taichi(x: ti.f32, mu: ti.f32, sigma: ti.f32) -> ti.f32:
+    def _gaussian_pdf_taichi(x: ti.f64, mu: ti.f64, sigma: ti.f64) -> ti.f64:
         """1D Gaussian probability density function (Taichi func)."""
-        z: ti.f32 = (x - mu) / sigma
-        result: ti.f32 = ti.exp(-0.5 * z * z) / (sigma * 2.5066282746310002)  # sqrt(2*pi) ≈ 2.5066
+        z: ti.f64 = (x - mu) / sigma
+        result: ti.f64 = ti.exp(-0.5 * z * z) / (sigma * 2.5066282746310002)  # sqrt(2*pi) ≈ 2.5066
         result = ti.select(sigma >= 1e-10, result, 0.0)
         return result
 
@@ -134,12 +134,12 @@ if TI_AVAILABLE and ti is not None:
     @ti.kernel
     def _ce_sample_batch_taichi(
         n_samples: ti.i32,
-        dist_mu_x: ti.f32, dist_mu_y: ti.f32,
-        dist_sigma_x: ti.f32, dist_sigma_y: ti.f32,
-        true_mu_x: ti.f32, true_mu_y: ti.f32,
-        true_sigma_x: ti.f32, true_sigma_y: ti.f32,
-        ownship_length: ti.f32, obstacle_length: ti.f32,
-        d_safe: ti.f32, collision_margin: ti.f32,
+        dist_mu_x: ti.f64, dist_mu_y: ti.f64,
+        dist_sigma_x: ti.f64, dist_sigma_y: ti.f64,
+        true_mu_x: ti.f64, true_mu_y: ti.f64,
+        true_sigma_x: ti.f64, true_sigma_y: ti.f64,
+        ownship_length: ti.f64, obstacle_length: ti.f64,
+        d_safe: ti.f64, collision_margin: ti.f64,
         samples_x: ti.types.ndarray(),
         samples_y: ti.types.ndarray(),
         collision_flags: ti.types.ndarray(),
@@ -197,12 +197,12 @@ if TI_AVAILABLE and ti is not None:
     @ti.kernel
     def _ce_sample_and_reduce_taichi(
         n_samples: ti.i32,
-        dist_mu_x: ti.f32, dist_mu_y: ti.f32,
-        dist_sigma_x: ti.f32, dist_sigma_y: ti.f32,
-        true_mu_x: ti.f32, true_mu_y: ti.f32,
-        true_sigma_x: ti.f32, true_sigma_y: ti.f32,
-        ownship_length: ti.f32, obstacle_length: ti.f32,
-        d_safe: ti.f32, collision_margin: ti.f32,
+        dist_mu_x: ti.f64, dist_mu_y: ti.f64,
+        dist_sigma_x: ti.f64, dist_sigma_y: ti.f64,
+        true_mu_x: ti.f64, true_mu_y: ti.f64,
+        true_sigma_x: ti.f64, true_sigma_y: ti.f64,
+        ownship_length: ti.f64, obstacle_length: ti.f64,
+        d_safe: ti.f64, collision_margin: ti.f64,
         collision_indices: ti.types.ndarray(),
         n_collision_arr: ti.types.ndarray(),
         max_collisions: ti.i32,
@@ -220,20 +220,20 @@ if TI_AVAILABLE and ti is not None:
         # Reset counter
         n_collision_arr[0] = 0
 
-        sum_coll_x: ti.f32 = 0.0
-        sum_coll_y: ti.f32 = 0.0
-        sum_coll_x_sq: ti.f32 = 0.0
-        sum_coll_y_sq: ti.f32 = 0.0
-        total_weight: ti.f32 = 0.0
+        sum_coll_x: ti.f64 = 0.0
+        sum_coll_y: ti.f64 = 0.0
+        sum_coll_x_sq: ti.f64 = 0.0
+        sum_coll_y_sq: ti.f64 = 0.0
+        total_weight: ti.f64 = 0.0
 
         for i in range(n_samples):
             # Generate sample using Box-Muller (inline to avoid tuple return issues in Taichi 1.7)
-            u1: ti.f32 = ti.max(ti.random(ti.f32), 1e-10)
-            u2: ti.f32 = ti.random(ti.f32)
-            sx: ti.f32 = dist_mu_x + dist_sigma_x * ti.sqrt(-2.0 * ti.log(u1)) * ti.cos(6.283185307179586 * u2)
-            u1 = ti.max(ti.random(ti.f32), 1e-10)
-            u2 = ti.random(ti.f32)
-            sy: ti.f32 = dist_mu_y + dist_sigma_y * ti.sqrt(-2.0 * ti.log(u1)) * ti.cos(6.283185307179586 * u2)
+            u1: ti.f64 = ti.max(ti.random(ti.f64), 1e-10)
+            u2: ti.f64 = ti.random(ti.f64)
+            sx: ti.f64 = dist_mu_x + dist_sigma_x * ti.sqrt(-2.0 * ti.log(u1)) * ti.cos(6.283185307179586 * u2)
+            u1 = ti.max(ti.random(ti.f64), 1e-10)
+            u2 = ti.random(ti.f64)
+            sy: ti.f64 = dist_mu_y + dist_sigma_y * ti.sqrt(-2.0 * ti.log(u1)) * ti.cos(6.283185307179586 * u2)
 
             # Check collision
             is_collision = _check_collision_2d_taichi(
@@ -275,14 +275,14 @@ if TI_AVAILABLE and ti is not None:
     def _mcskf4d_kernel_taichi(
         n_particles: ti.i32,
         n_steps: ti.i32,
-        dt: ti.f32,
-        process_noise: ti.f32,
-        ownship_length: ti.f32, obstacle_length: ti.f32,
-        d_safe: ti.f32, collision_margin: ti.f32,
-        init_x_rel: ti.f32, init_y_rel: ti.f32,
-        init_vx_rel: ti.f32, init_vy_rel: ti.f32,
-        meas_x: ti.f32, meas_y: ti.f32,
-        meas_noise: ti.f32,
+        dt: ti.f64,
+        process_noise: ti.f64,
+        ownship_length: ti.f64, obstacle_length: ti.f64,
+        d_safe: ti.f64, collision_margin: ti.f64,
+        init_x_rel: ti.f64, init_y_rel: ti.f64,
+        init_vx_rel: ti.f64, init_vy_rel: ti.f64,
+        meas_x: ti.f64, meas_y: ti.f64,
+        meas_noise: ti.f64,
         collision_count: ti.types.ndarray(),
     ):
         """Monte Carlo Sequential Kalman Filter (MCSKF4D) kernel.
@@ -306,29 +306,29 @@ if TI_AVAILABLE and ti is not None:
 
         for p in range(n_particles):
             # Initialize particle state
-            px: ti.f32 = init_x_rel
-            py: ti.f32 = init_y_rel
-            pvx: ti.f32 = init_vx_rel
-            pvy: ti.f32 = init_vy_rel
+            px: ti.f64 = init_x_rel
+            py: ti.f64 = init_y_rel
+            pvx: ti.f64 = init_vx_rel
+            pvy: ti.f64 = init_vy_rel
 
             for s in range(n_steps):
                 # Add process noise to position
-                noise_x = ti.sqrt(process_noise) * (ti.random(ti.f32) * 2.0 - 1.0)
-                noise_y = ti.sqrt(process_noise) * (ti.random(ti.f32) * 2.0 - 1.0)
+                noise_x = ti.sqrt(process_noise) * (ti.random(ti.f64) * 2.0 - 1.0)
+                noise_y = ti.sqrt(process_noise) * (ti.random(ti.f64) * 2.0 - 1.0)
                 px += noise_x * dt
                 py += noise_y * dt
 
                 # Add process noise to velocity
-                pvx += ti.sqrt(process_noise) * (ti.random(ti.f32) * 2.0 - 1.0) * dt
-                pvy += ti.sqrt(process_noise) * (ti.random(ti.f32) * 2.0 - 1.0) * dt
+                pvx += ti.sqrt(process_noise) * (ti.random(ti.f64) * 2.0 - 1.0) * dt
+                pvy += ti.sqrt(process_noise) * (ti.random(ti.f64) * 2.0 - 1.0) * dt
 
                 # Kalman-like measurement update
-                meas_x_noisy = meas_x + ti.sqrt(meas_noise) * (ti.random(ti.f32) * 2.0 - 1.0)
-                meas_y_noisy = meas_y + ti.sqrt(meas_noise) * (ti.random(ti.f32) * 2.0 - 1.0)
+                meas_x_noisy = meas_x + ti.sqrt(meas_noise) * (ti.random(ti.f64) * 2.0 - 1.0)
+                meas_y_noisy = meas_y + ti.sqrt(meas_noise) * (ti.random(ti.f64) * 2.0 - 1.0)
 
                 # Simple Kalman gain (fixed for simplicity)
-                K_x: ti.f32 = 0.1
-                K_y: ti.f32 = 0.1
+                K_x: ti.f64 = 0.1
+                K_y: ti.f64 = 0.1
                 px += K_x * (meas_x_noisy - px)
                 py += K_y * (meas_y_noisy - py)
 

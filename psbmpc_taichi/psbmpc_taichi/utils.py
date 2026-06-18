@@ -34,10 +34,10 @@ if _ti_available:
 if ti is not None:
 
     @ti.func
-    def normalize_angle_taichi(angle: ti.f32) -> ti.f32:
+    def normalize_angle_taichi(angle: ti.f64) -> ti.f64:
         """GPU-accelerated angle normalization to [-pi, pi]."""
         two_pi = 2.0 * math.pi
-        angle = angle - ti.cast(ti.floor(angle / two_pi), ti.f32) * two_pi
+        angle = angle - ti.cast(ti.floor(angle / two_pi), ti.f64) * two_pi
         if angle < -math.pi:
             angle = angle + two_pi
         elif angle > math.pi:
@@ -45,40 +45,40 @@ if ti is not None:
         return angle
 
     @ti.func
-    def angle_diff_taichi(a: ti.f32, b: ti.f32) -> ti.f32:
+    def angle_diff_taichi(a: ti.f64, b: ti.f64) -> ti.f64:
         """GPU-accelerated shortest angle difference."""
         diff = a - b
         diff = normalize_angle_taichi(diff)
         return diff
 
     @ti.func
-    def distance_2d_taichi(x1: ti.f32, y1: ti.f32, x2: ti.f32, y2: ti.f32) -> ti.f32:
+    def distance_2d_taichi(x1: ti.f64, y1: ti.f64, x2: ti.f64, y2: ti.f64) -> ti.f64:
         """GPU-accelerated Euclidean distance."""
         dx = x2 - x1
         dy = y2 - y1
         return ti.sqrt(dx * dx + dy * dy)
 
     @ti.func
-    def bearing_2d_taichi(x1: ti.f32, y1: ti.f32, x2: ti.f32, y2: ti.f32) -> ti.f32:
+    def bearing_2d_taichi(x1: ti.f64, y1: ti.f64, x2: ti.f64, y2: ti.f64) -> ti.f64:
         """GPU-accelerated bearing calculation."""
         return ti.atan2(y2 - y1, x2 - x1)
 
     @ti.func
-    def cross_2d_taichi(ax: ti.f32, ay: ti.f32, bx: ti.f32, by: ti.f32) -> ti.f32:
+    def cross_2d_taichi(ax: ti.f64, ay: ti.f64, bx: ti.f64, by: ti.f64) -> ti.f64:
         """GPU-accelerated 2D cross product."""
         return ax * by - ay * bx
 
     @ti.func
-    def dot_2d_taichi(ax: ti.f32, ay: ti.f32, bx: ti.f32, by: ti.f32) -> ti.f32:
+    def dot_2d_taichi(ax: ti.f64, ay: ti.f64, bx: ti.f64, by: ti.f64) -> ti.f64:
         """GPU-accelerated 2D dot product."""
         return ax * bx + ay * by
 
     @ti.func
     def point_to_segment_distance_taichi(
-        px: ti.f32, py: ti.f32,
-        ax: ti.f32, ay: ti.f32,
-        bx: ti.f32, by: ti.f32,
-    ) -> Tuple[ti.f32, ti.f32, ti.f32, ti.f32]:
+        px: ti.f64, py: ti.f64,
+        ax: ti.f64, ay: ti.f64,
+        bx: ti.f64, by: ti.f64,
+    ) -> Tuple[ti.f64, ti.f64, ti.f64, ti.f64]:
         """GPU-accelerated point-to-segment distance.
         
         Returns (distance, t, proj_x, proj_y).
@@ -89,11 +89,11 @@ if ti is not None:
 
         proj_x = ax
         proj_y = ay
-        t = ti.f32(0.0)
+        t = ti.f64(0.0)
 
-        if len_sq > ti.f32(1e-12):
+        if len_sq > ti.f64(1e-12):
             t = ((px - ax) * abx + (py - ay) * aby) / len_sq
-            t = ti.max(ti.f32(0.0), ti.min(ti.f32(1.0), t))
+            t = ti.max(ti.f64(0.0), ti.min(ti.f64(1.0), t))
             proj_x = ax + t * abx
             proj_y = ay + t * aby
 
@@ -105,16 +105,16 @@ if ti is not None:
 
     @ti.func
     def ship_polygon_taichi(
-        x: ti.f32, y: ti.f32, chi: ti.f32,
-        length: ti.f32, beam: ti.f32,
+        x: ti.f64, y: ti.f64, chi: ti.f64,
+        length: ti.f64, beam: ti.f64,
         corners: ti.types.ndarray(),
     ) -> None:
         """GPU-accelerated ship polygon generation.
         
         Fills corners array with 5 points (4 corners + closing point).
         """
-        half_l = length * ti.f32(0.5)
-        half_b = beam * ti.f32(0.5)
+        half_l = length * ti.f64(0.5)
+        half_b = beam * ti.f64(0.5)
 
         cos_chi = ti.cos(chi)
         sin_chi = ti.sin(chi)
@@ -131,17 +131,17 @@ if ti is not None:
 
     @ti.func
     def polygon_distance_taichi(
-        x1: ti.f32, y1: ti.f32, chi1: ti.f32, l1: ti.f32, b1: ti.f32,
-        x2: ti.f32, y2: ti.f32, chi2: ti.f32, l2: ti.f32, b2: ti.f32,
-    ) -> ti.f32:
+        x1: ti.f64, y1: ti.f64, chi1: ti.f64, l1: ti.f64, b1: ti.f64,
+        x2: ti.f64, y2: ti.f64, chi2: ti.f64, l2: ti.f64, b2: ti.f64,
+    ) -> ti.f64:
         """GPU-accelerated minimum distance between two ship polygons."""
         # Generate polygons
-        poly1 = ti.Vector.zeros(10, dtype=ti.f32)  # 5 points * 2 coords
-        poly2 = ti.Vector.zeros(10, dtype=ti.f32)
+        poly1 = ti.Vector.zeros(10, dtype=ti.f64)  # 5 points * 2 coords
+        poly2 = ti.Vector.zeros(10, dtype=ti.f64)
         ship_polygon_taichi(x1, y1, chi1, l1, b1, poly1)
         ship_polygon_taichi(x2, y2, chi2, l2, b2, poly2)
 
-        min_dist = ti.f32(1e18)  # infinity
+        min_dist = ti.f64(1e18)  # infinity
 
         # Check all segments
         for i in range(4):  # 4 segments in rectangle
@@ -167,11 +167,11 @@ if ti is not None:
         return min_dist
 
     @ti.func
-    def gaussian_pdf_taichi(x: ti.f32, mu: ti.f32, sigma: ti.f32) -> ti.f32:
+    def gaussian_pdf_taichi(x: ti.f64, mu: ti.f64, sigma: ti.f64) -> ti.f64:
         """GPU-accelerated Gaussian PDF."""
         diff = x - mu
-        exponent = -ti.f32(0.5) * diff * diff / (sigma * sigma + ti.f32(1e-12))
-        return ti.exp(exponent) / (ti.sqrt(ti.f32(2.0) * math.pi) * (sigma + ti.f32(1e-12)))
+        exponent = -ti.f64(0.5) * diff * diff / (sigma * sigma + ti.f64(1e-12))
+        return ti.exp(exponent) / (ti.sqrt(ti.f64(2.0) * math.pi) * (sigma + ti.f64(1e-12)))
 
 
 # ============================================================================
@@ -446,7 +446,7 @@ if ti is not None:
             result: output array of normalized angles in [-pi, pi]
         """
         for i in range(len(angles)):
-            result[i] = normalize_angle_taichi(ti.f32(angles[i]))
+            result[i] = normalize_angle_taichi(ti.f64(angles[i]))
 
     @ti.kernel
     def batch_distance_2d(
@@ -465,8 +465,8 @@ if ti is not None:
         """
         for i in range(len(x1s)):
             result[i] = distance_2d_taichi(
-                ti.f32(x1s[i]), ti.f32(y1s[i]),
-                ti.f32(x2s[i]), ti.f32(y2s[i]),
+                ti.f64(x1s[i]), ti.f64(y1s[i]),
+                ti.f64(x2s[i]), ti.f64(y2s[i]),
             )
 
 

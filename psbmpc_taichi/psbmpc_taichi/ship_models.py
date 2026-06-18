@@ -31,12 +31,12 @@ if TI_AVAILABLE and ti is not None:
     # ========================================================================
     @ti.kernel
     def predict_trajectory_batch_taichi(
-        xs_x: ti.f32, xs_y: ti.f32, xs_chi: ti.f32, xs_U: ti.f32,
+        xs_x: ti.f64, xs_y: ti.f64, xs_chi: ti.f64, xs_U: ti.f64,
         offsets: ti.types.ndarray(),
         n_candidates: ti.i32,
         n_steps: ti.i32,
-        dt: ti.f32,
-        time_constant: ti.f32,
+        dt: ti.f64,
+        time_constant: ti.f64,
         use_rk1: ti.i32,
         traj_x: ti.types.ndarray(),
         traj_y: ti.types.ndarray(),
@@ -114,12 +114,12 @@ if TI_AVAILABLE and ti is not None:
     # ========================================================================
     @ti.kernel
     def predict_trajectory_step_offsets_taichi(
-        xs_x: ti.f32, xs_y: ti.f32, xs_chi: ti.f32, xs_U: ti.f32,
+        xs_x: ti.f64, xs_y: ti.f64, xs_chi: ti.f64, xs_U: ti.f64,
         offsets: ti.types.ndarray(),
         n_candidates: ti.i32,
         n_steps: ti.i32,
-        dt: ti.f32,
-        time_constant: ti.f32,
+        dt: ti.f64,
+        time_constant: ti.f64,
         use_rk1: ti.i32,
         traj_x: ti.types.ndarray(),
         traj_y: ti.types.ndarray(),

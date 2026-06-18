@@ -67,47 +67,47 @@ if TI_AVAILABLE and ti is not None:
     @ti.dataclass
     class ShipState4TI:
         """4D ship state: [x, y, chi, U]."""
-        x: ti.f32
-        y: ti.f32
-        chi: ti.f32
-        U: ti.f32
+        x: ti.f64
+        y: ti.f64
+        chi: ti.f64
+        U: ti.f64
 
     @ti.dataclass
     class ShipState6TI:
         """6D ship state: [x, y, psi, u, v, r]."""
-        x: ti.f32
-        y: ti.f32
-        psi: ti.f32
-        u: ti.f32
-        v: ti.f32
-        r: ti.f32
+        x: ti.f64
+        y: ti.f64
+        psi: ti.f64
+        u: ti.f64
+        v: ti.f64
+        r: ti.f64
 
     @ti.dataclass
     class WaypointTI:
         """Navigation waypoint."""
-        x: ti.f32
-        y: ti.f32
+        x: ti.f64
+        y: ti.f64
         id: ti.i32
 
     @ti.dataclass
     class ObstacleDataTI:
         """Obstacle ship data for collision avoidance."""
-        x: ti.f32
-        y: ti.f32
-        chi: ti.f32
-        U: ti.f32
-        length: ti.f32
-        beam: ti.f32
+        x: ti.f64
+        y: ti.f64
+        chi: ti.f64
+        U: ti.f64
+        length: ti.f64
+        beam: ti.f64
         colregs_role: ti.i32
-        d_safe: ti.f32
-        cov_xx: ti.f32
-        cov_yy: ti.f32
-        cov_xy: ti.f32
+        d_safe: ti.f64
+        cov_xx: ti.f64
+        cov_yy: ti.f64
+        cov_xy: ti.f64
 
     @ti.dataclass
     class CPEResultTI:
         """Collision probability estimation result."""
-        probability: ti.f32
+        probability: ti.f64
         converged: ti.i32
         iterations: ti.i32
         n_samples: ti.i32
@@ -115,16 +115,16 @@ if TI_AVAILABLE and ti is not None:
     @ti.dataclass
     class MPCResultTI:
         """MPC solver result."""
-        offset_chi: ti.f32
-        offset_U: ti.f32
-        traj_x: ti.types.vector(101, ti.f32)
-        traj_y: ti.types.vector(101, ti.f32)
-        traj_chi: ti.types.vector(101, ti.f32)
-        traj_U: ti.types.vector(101, ti.f32)
-        total_cost: ti.f32
-        path_cost: ti.f32
-        collision_cost: ti.f32
-        colregs_cost: ti.f32
+        offset_chi: ti.f64
+        offset_U: ti.f64
+        traj_x: ti.types.vector(101, ti.f64)
+        traj_y: ti.types.vector(101, ti.f64)
+        traj_chi: ti.types.vector(101, ti.f64)
+        traj_U: ti.types.vector(101, ti.f64)
+        total_cost: ti.f64
+        path_cost: ti.f64
+        collision_cost: ti.f64
+        colregs_cost: ti.f64
 
     # --- Field layouts for batched GPU data ---
 
@@ -134,48 +134,48 @@ if TI_AVAILABLE and ti is not None:
     MAX_TRAJ_STEPS = 301  # T=300, dt=1 => 301 points
 
     # Obstacle fields (dense, one row per obstacle)
-    obs_x_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
-    obs_y_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
-    obs_chi_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
-    obs_U_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
-    obs_length_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
-    obs_beam_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    obs_x_f = ti.field(dtype=ti.f64, shape=MAX_OBSTACLES)
+    obs_y_f = ti.field(dtype=ti.f64, shape=MAX_OBSTACLES)
+    obs_chi_f = ti.field(dtype=ti.f64, shape=MAX_OBSTACLES)
+    obs_U_f = ti.field(dtype=ti.f64, shape=MAX_OBSTACLES)
+    obs_length_f = ti.field(dtype=ti.f64, shape=MAX_OBSTACLES)
+    obs_beam_f = ti.field(dtype=ti.f64, shape=MAX_OBSTACLES)
     obs_colregs_f = ti.field(dtype=ti.i32, shape=MAX_OBSTACLES)
-    obs_dsafe_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    obs_dsafe_f = ti.field(dtype=ti.f64, shape=MAX_OBSTACLES)
 
     # Waypoint fields
-    wp_x_f = ti.field(dtype=ti.f32, shape=MAX_WAYPOINTS)
-    wp_y_f = ti.field(dtype=ti.f32, shape=MAX_WAYPOINTS)
+    wp_x_f = ti.field(dtype=ti.f64, shape=MAX_WAYPOINTS)
+    wp_y_f = ti.field(dtype=ti.f64, shape=MAX_WAYPOINTS)
 
     # Ship state fields
-    ship_x_f = ti.field(dtype=ti.f32, shape=())
-    ship_y_f = ti.field(dtype=ti.f32, shape=())
-    ship_chi_f = ti.field(dtype=ti.f32, shape=())
-    ship_U_f = ti.field(dtype=ti.f32, shape=())
+    ship_x_f = ti.field(dtype=ti.f64, shape=())
+    ship_y_f = ti.field(dtype=ti.f64, shape=())
+    ship_chi_f = ti.field(dtype=ti.f64, shape=())
+    ship_U_f = ti.field(dtype=ti.f64, shape=())
 
     # Candidate bearing fields (one per candidate)
-    cand_chi_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
-    cand_U_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
+    cand_chi_f = ti.field(dtype=ti.f64, shape=MAX_CANDIDATES)
+    cand_U_f = ti.field(dtype=ti.f64, shape=MAX_CANDIDATES)
 
     # Trajectory output fields: [candidate_idx, timestep]
-    traj_x_f = ti.field(dtype=ti.f32, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
-    traj_y_f = ti.field(dtype=ti.f32, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
-    traj_chi_f = ti.field(dtype=ti.f32, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
-    traj_U_f = ti.field(dtype=ti.f32, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
+    traj_x_f = ti.field(dtype=ti.f64, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
+    traj_y_f = ti.field(dtype=ti.f64, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
+    traj_chi_f = ti.field(dtype=ti.f64, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
+    traj_U_f = ti.field(dtype=ti.f64, shape=(MAX_CANDIDATES, MAX_TRAJ_STEPS))
 
     # Cost output fields: [candidate_idx]
-    cost_total_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
-    cost_path_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
-    cost_collision_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
-    cost_colregs_f = ti.field(dtype=ti.f32, shape=MAX_CANDIDATES)
+    cost_total_f = ti.field(dtype=ti.f64, shape=MAX_CANDIDATES)
+    cost_path_f = ti.field(dtype=ti.f64, shape=MAX_CANDIDATES)
+    cost_collision_f = ti.field(dtype=ti.f64, shape=MAX_CANDIDATES)
+    cost_colregs_f = ti.field(dtype=ti.f64, shape=MAX_CANDIDATES)
 
     # CPE fields: [obstacle_idx, sample_idx]
     MAX_CPE_SAMPLES = 2048
-    cpe_samples_x_f = ti.field(dtype=ti.f32, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
-    cpe_samples_y_f = ti.field(dtype=ti.f32, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
-    cpe_weights_f = ti.field(dtype=ti.f32, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
+    cpe_samples_x_f = ti.field(dtype=ti.f64, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
+    cpe_samples_y_f = ti.field(dtype=ti.f64, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
+    cpe_weights_f = ti.field(dtype=ti.f64, shape=(MAX_OBSTACLES, MAX_CPE_SAMPLES))
     cpe_collisions_f = ti.field(dtype=ti.i32, shape=MAX_OBSTACLES)
-    cpe_prob_f = ti.field(dtype=ti.f32, shape=MAX_OBSTACLES)
+    cpe_prob_f = ti.field(dtype=ti.f64, shape=MAX_OBSTACLES)
 
     # --- TaichiBuffers class ---
 
