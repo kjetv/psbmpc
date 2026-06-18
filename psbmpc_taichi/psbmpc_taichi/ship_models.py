@@ -27,74 +27,6 @@ from .utils import (
 
 if TI_AVAILABLE and ti is not None:
     # ========================================================================
-    # Euler integration step (kernel)
-    # ========================================================================
-    @ti.func
-    def _euler_step_taichi(x: ti.f32, y: ti.f32, chi: ti.f32, U: ti.f32,
-                           chi_d: ti.f32, U_d: ti.f32, dt: ti.f32,
-                           time_constant: ti.f32) -> Tuple[ti.f32, ti.f32, ti.f32, ti.f32]:
-        """Single Euler integration step (Taichi func)."""
-        # Heading dynamics (first-order response)
-        chi_dot = (chi_d - chi) / time_constant
-        # Surge dynamics (first-order response)
-        U_dot = (U_d - U) / time_constant
-        # Position dynamics
-        x_new = x + U * ti.cos(chi) * dt
-        y_new = y + U * ti.sin(chi) * dt
-        # Normalize heading
-        chi_new = chi + chi_dot * dt
-        # Simple heading normalization (inline)
-        while chi_new > 3.141592653589793:
-            chi_new -= 6.283185307179586
-        while chi_new < -3.141592653589793:
-            chi_new += 6.283185307179586
-        U_new = U + U_dot * dt
-        return x_new, y_new, chi_new, U_new
-
-    # ========================================================================
-    # RK1 (Heun) integration step (kernel)
-    # ========================================================================
-    @ti.func
-    def _rk1_step_taichi(x: ti.f32, y: ti.f32, chi: ti.f32, U: ti.f32,
-                         chi_d: ti.f32, U_d: ti.f32, dt: ti.f32,
-                         time_constant: ti.f32) -> Tuple[ti.f32, ti.f32, ti.f32, ti.f32]:
-        """Single RK1 (Heun) integration step (Taichi func)."""
-        # Helper: compute derivatives
-        def derivs(st_x, st_y, st_chi, st_U):
-            chi_dot = (chi_d - st_chi) / time_constant
-            U_dot = (U_d - st_U) / time_constant
-            return (
-                st_U * ti.cos(st_chi),
-                st_U * ti.sin(st_chi),
-                chi_dot,
-                U_dot,
-            )
-
-        # Euler step (predictor)
-        k1_x, k1_y, k1_chi, k1_U = derivs(x, y, chi, U)
-        pred_x = x + k1_x * dt
-        pred_y = y + k1_y * dt
-        pred_chi = chi + k1_chi * dt
-        pred_U = U + k1_U * dt
-
-        # RK1 correction
-        k2_x, k2_y, k2_chi, k2_U = derivs(pred_x, pred_y, pred_chi, pred_U)
-
-        # Average
-        x_new = x + 0.5 * (k1_x + k2_x) * dt
-        y_new = y + 0.5 * (k1_y + k2_y) * dt
-        chi_new = chi + 0.5 * (k1_chi + k2_chi) * dt
-        U_new = U + 0.5 * (k1_U + k2_U) * dt
-
-        # Normalize heading
-        while chi_new > 3.141592653589793:
-            chi_new -= 6.283185307179586
-        while chi_new < -3.141592653589793:
-            chi_new += 6.283185307179586
-
-        return x_new, y_new, chi_new, U_new
-
-    # ========================================================================
     # Batched trajectory prediction kernel (all candidates in one launch)
     # ========================================================================
     @ti.kernel
@@ -133,25 +65,49 @@ if TI_AVAILABLE and ti is not None:
                 chi_d += 6.283185307179586
 
             # Store initial state
-            base = c * (n_steps + 1)
-            traj_x[base] = xs_x
-            traj_y[base] = xs_y
-            traj_chi[base] = xs_chi
-            traj_U[base] = xs_U
+            traj_x[c, 0] = xs_x
+            traj_y[c, 0] = xs_y
+            traj_chi[c, 0] = xs_chi
+            traj_U[c, 0] = xs_U
 
             # Integrate
             cx, cy, cchi, cU = xs_x, xs_y, xs_chi, xs_U
             for s in range(n_steps):
+                # Heading dynamics (first-order response)
+                chi_dot = (chi_d - cchi) / time_constant
+                # Surge dynamics (first-order response)
+                U_dot = (xs_U - cU) / time_constant
                 if use_rk1 != 0:
-                    cx, cy, cchi, cU = _rk1_step_taichi(cx, cy, cchi, cU,
-                                                         chi_d, xs_U, dt, time_constant)
+                    # RK1 (Heun) integration - inlined to avoid tuple return issues
+                    k1_x = cU * ti.cos(cchi)
+                    k1_y = cU * ti.sin(cchi)
+                    pred_x = cx + k1_x * dt
+                    pred_y = cy + k1_y * dt
+                    pred_chi = cchi + chi_dot * dt
+                    pred_U = cU + U_dot * dt
+                    k2_chi_dot = (chi_d - pred_chi) / time_constant
+                    k2_U_dot = (xs_U - pred_U) / time_constant
+                    k2_x = pred_U * ti.cos(pred_chi)
+                    k2_y = pred_U * ti.sin(pred_chi)
+                    cx = cx + 0.5 * (k1_x + k2_x) * dt
+                    cy = cy + 0.5 * (k1_y + k2_y) * dt
+                    cchi = cchi + 0.5 * (chi_dot + k2_chi_dot) * dt
+                    cU = cU + 0.5 * (U_dot + k2_U_dot) * dt
                 else:
-                    cx, cy, cchi, cU = _euler_step_taichi(cx, cy, cchi, cU,
-                                                           chi_d, xs_U, dt, time_constant)
-                traj_x[base + s + 1] = cx
-                traj_y[base + s + 1] = cy
-                traj_chi[base + s + 1] = cchi
-                traj_U[base + s + 1] = cU
+                    # Euler integration
+                    cx = cx + cU * ti.cos(cchi) * dt
+                    cy = cy + cU * ti.sin(cchi) * dt
+                    cchi = cchi + chi_dot * dt
+                    cU = cU + U_dot * dt
+                # Normalize heading
+                while cchi > 3.141592653589793:
+                    cchi -= 6.283185307179586
+                while cchi < -3.141592653589793:
+                    cchi += 6.283185307179586
+                traj_x[c, s + 1] = cx
+                traj_y[c, s + 1] = cy
+                traj_chi[c, s + 1] = cchi
+                traj_U[c, s + 1] = cU
 
     # ========================================================================
     # Batched trajectory prediction with per-step offsets
@@ -184,11 +140,10 @@ if TI_AVAILABLE and ti is not None:
         """
         for c in range(n_candidates):
             # Store initial state
-            base = c * (n_steps + 1)
-            traj_x[base] = xs_x
-            traj_y[base] = xs_y
-            traj_chi[base] = xs_chi
-            traj_U[base] = xs_U
+            traj_x[c, 0] = xs_x
+            traj_y[c, 0] = xs_y
+            traj_chi[c, 0] = xs_chi
+            traj_U[c, 0] = xs_U
 
             # Integrate with per-step offsets
             cx, cy, cchi, cU = xs_x, xs_y, xs_chi, xs_U
@@ -202,16 +157,41 @@ if TI_AVAILABLE and ti is not None:
                 while chi_d < -3.141592653589793:
                     chi_d += 6.283185307179586
 
+                # Heading dynamics (first-order response)
+                chi_dot = (chi_d - cchi) / time_constant
+                # Surge dynamics (first-order response)
+                U_dot = (cU - cU) / time_constant
                 if use_rk1 != 0:
-                    cx, cy, cchi, cU = _rk1_step_taichi(cx, cy, cchi, cU,
-                                                         chi_d, cU, dt, time_constant)
+                    # RK1 (Heun) integration
+                    k1_x = cU * ti.cos(cchi)
+                    k1_y = cU * ti.sin(cchi)
+                    pred_x = cx + k1_x * dt
+                    pred_y = cy + k1_y * dt
+                    pred_chi = cchi + chi_dot * dt
+                    pred_U = cU + U_dot * dt
+                    k2_chi_dot = (chi_d - pred_chi) / time_constant
+                    k2_U_dot = (cU - pred_U) / time_constant
+                    k2_x = pred_U * ti.cos(pred_chi)
+                    k2_y = pred_U * ti.sin(pred_chi)
+                    cx = cx + 0.5 * (k1_x + k2_x) * dt
+                    cy = cy + 0.5 * (k1_y + k2_y) * dt
+                    cchi = cchi + 0.5 * (chi_dot + k2_chi_dot) * dt
+                    cU = cU + 0.5 * (U_dot + k2_U_dot) * dt
                 else:
-                    cx, cy, cchi, cU = _euler_step_taichi(cx, cy, cchi, cU,
-                                                           chi_d, cU, dt, time_constant)
-                traj_x[base + s + 1] = cx
-                traj_y[base + s + 1] = cy
-                traj_chi[base + s + 1] = cchi
-                traj_U[base + s + 1] = cU
+                    # Euler integration
+                    cx = cx + cU * ti.cos(cchi) * dt
+                    cy = cy + cU * ti.sin(cchi) * dt
+                    cchi = cchi + chi_dot * dt
+                    cU = cU + U_dot * dt
+                # Normalize heading
+                while cchi > 3.141592653589793:
+                    cchi -= 6.283185307179586
+                while cchi < -3.141592653589793:
+                    cchi += 6.283185307179586
+                traj_x[c, s + 1] = cx
+                traj_y[c, s + 1] = cy
+                traj_chi[c, s + 1] = cchi
+                traj_U[c, s + 1] = cU
 
 
 # ============================================================================
