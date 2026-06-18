@@ -6,6 +6,7 @@
 #include "grounding_hazard_manager.hpp"
 
 #include <Eigen/Dense>
+#include <filesystem>
 #if ENABLE_TEST_FILE_PLOTTING
 #include <engine.h>
 #define BUFSIZE 1000000

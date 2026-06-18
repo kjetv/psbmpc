@@ -115,7 +115,7 @@ namespace PSBMPC_LIB
 			int os_do_ps_pair_index; // Index of own-ship - dynamic obstacle i in prediction sccenario ps pair to consider in thread
 			TML::PDMatrix<float, 2 * MAX_N_M, 1> offset_sequence;
 
-			int n_samples, n_seg_samples;
+			int n_samples, n_seg_samples, p_step;
 
 			float h_so_j, h_do_i_ps, h_do_i_ps_k, h_colregs_i_ps, P_c_i;
 
@@ -165,7 +165,7 @@ namespace PSBMPC_LIB
 				TML::PDMatrix<float, 4, MAX_N_SAMPLES> *trajectory,
 				MPC_Cost<CB_Functor_Pars> *mpc_cost,
 				COLREGS_Violation_Evaluator *colregs_violation_evaluators) : pars(pars), fdata(fdata), polygons(polygons), obstacles(obstacles), cpe(cpe), ownship(ownship),
-																			 trajectory(trajectory), mpc_cost(mpc_cost), colregs_violation_evaluators(colregs_violation_evaluators)
+																			 trajectory(trajectory), mpc_cost(mpc_cost), colregs_violation_evaluators(colregs_violation_evaluators), p_step(pars ? pars->p_step : 1)
 			{
 			}
 

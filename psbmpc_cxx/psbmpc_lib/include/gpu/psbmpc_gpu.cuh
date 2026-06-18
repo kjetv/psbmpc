@@ -17,6 +17,7 @@
 #include <Eigen/Dense>
 #include <string>
 #include <thrust/device_vector.h>
+#include <thrust/sequence.h>
 
 namespace PSBMPC_LIB
 {
